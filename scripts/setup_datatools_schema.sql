@@ -40,11 +40,14 @@ CREATE TABLE IF NOT EXISTS datatools.compare_runs (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Validation runs (target_table, result_json)
+-- Validation runs (target_table, env_schema, result_json, status)
 CREATE TABLE IF NOT EXISTS datatools.validation_runs (
   id BIGSERIAL PRIMARY KEY,
   target_table TEXT NOT NULL,
+  env_schema TEXT NOT NULL DEFAULT 'dev',
   result_json JSONB,
+  status TEXT NOT NULL DEFAULT 'completed',
+  error_message TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

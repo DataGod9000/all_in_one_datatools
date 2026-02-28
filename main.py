@@ -83,6 +83,15 @@ def ensure_deletion_schedule_table():
                     )
                 except Exception:
                     pass
+                for col, typ in [
+                    ("env_schema", "TEXT NOT NULL DEFAULT 'dev'"),
+                    ("status", "TEXT NOT NULL DEFAULT 'completed'"),
+                    ("error_message", "TEXT"),
+                ]:
+                    try:
+                        cur.execute(f"ALTER TABLE datatools.validation_runs ADD COLUMN IF NOT EXISTS {col} {typ}")
+                    except Exception:
+                        pass
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS datatools.deletion_schedule (
@@ -347,7 +356,6 @@ class CompareRunRequest(BaseModel):
 class ValidateRunRequest(BaseModel):
     target_table: str
     env_schema: str
-    key_columns: Optional[list[str]] = None
 
 
 class ScheduleDeleteRequest(BaseModel):
@@ -1040,112 +1048,184 @@ def compare_get_run(run_id: int):
     }
 
 
+def _run_validate_background(run_id: int, target_table: str, env_schema: str) -> None:
+    """Background job: run validation and update validation_runs row."""
+    try:
+        with get_conn() as conn:
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = %s AND table_name = %s
+                    ORDER BY ordinal_position
+                    """,
+                    (env_schema, target_table),
+                )
+                columns = [{"name": r[0], "data_type": r[1]} for r in cur.fetchall()]
+
+            if not columns:
+                raise ValueError(f"Table {env_schema}.{target_table} not found or has no columns")
+
+            full_name = f'"{env_schema}"."{target_table}"'
+            null_counts: list[dict] = []
+
+            # Total row count
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT COUNT(*) FROM {full_name}")
+                total_rows = cur.fetchone()[0]
+
+            # Null count per column
+            for col in columns:
+                cname = col["name"]
+                if not validate_identifier(cname):
+                    continue
+                with conn.cursor() as cur:
+                    cur.execute(f'SELECT COUNT(*) - COUNT("{cname}") FROM {full_name}')
+                    null_count = cur.fetchone()[0]
+                null_counts.append({"column": cname, "null_count": int(null_count or 0)})
+
+            # Duplicate rows (full row duplicates)
+            col_list = ", ".join(f'"{c["name"]}"' for c in columns if validate_identifier(c["name"]))
+            if col_list:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT (SELECT COUNT(*) FROM {full_name})
+                             - (SELECT COUNT(*) FROM (SELECT DISTINCT {col_list} FROM {full_name}) x)
+                        """
+                    )
+                    duplicate_rows = cur.fetchone()[0] or 0
+            else:
+                duplicate_rows = 0
+
+            result_json = {
+                "total_rows": int(total_rows),
+                "null_counts": null_counts,
+                "duplicate_rows": int(duplicate_rows),
+            }
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE datatools.validation_runs
+                    SET result_json = %s::jsonb, status = 'completed'
+                    WHERE id = %s
+                    """,
+                    (json.dumps(result_json), run_id),
+                )
+            audit_log(conn, "validate_run", env_schema, {"run_id": run_id, "target_table": target_table})
+            conn.commit()
+    except Exception as e:
+        err_msg = str(e)
+        try:
+            with get_conn() as conn:
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE datatools.validation_runs SET status = 'error', error_message = %s WHERE id = %s",
+                        (err_msg, run_id),
+                    )
+        except Exception:
+            pass
+
+
 @app.post("/validate/run")
 def validate_run(req: ValidateRunRequest):
-    """Run validation checks: row count, null counts per column, duplicate key groups; store and audit."""
+    """Queue validation job, return run_id immediately. Validation runs in background."""
     validate_env_schema(req.env_schema)
     validate_table_name(req.target_table)
 
     with get_conn() as conn:
+        conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT column_name, data_type
-                FROM information_schema.columns
-                WHERE table_schema = %s AND table_name = %s
-                ORDER BY ordinal_position
+                INSERT INTO datatools.validation_runs (target_table, env_schema, result_json, status)
+                VALUES (%s, %s, '{}'::jsonb, 'pending')
+                RETURNING id
                 """,
-                (req.env_schema, req.target_table),
+                (req.target_table, req.env_schema),
             )
-            columns = [{"name": r[0], "data_type": r[1]} for r in cur.fetchall()]
+            run_id = cur.fetchone()[0]
 
-        if not columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Table {req.env_schema}.{req.target_table} not found or has no columns",
-            )
+    threading.Thread(target=_run_validate_background, args=(run_id, req.target_table, req.env_schema), daemon=True).start()
+    return {"run_id": run_id, "status": "pending"}
 
-        full_name = f'"{req.env_schema}"."{req.target_table}"'
-        checks = []
 
-        # Total row count
+@app.get("/validate/runs")
+def validate_list_runs(
+    env_schema: Optional[str] = Query(None, description="Filter by env (dev/prod)"),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """List validation runs with status."""
+    with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) FROM {full_name}")
-            total_rows = cur.fetchone()[0]
-        checks.append({
-            "check_item": "total_row_count",
-            "result": "PASS" if total_rows >= 0 else "FAIL",
-            "issue_count": 0 if total_rows >= 0 else 1,
+            if env_schema:
+                validate_env_schema(env_schema)
+                cur.execute(
+                    """
+                    SELECT id, target_table, env_schema, result_json, status, error_message, created_at
+                    FROM datatools.validation_runs
+                    WHERE env_schema = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (env_schema, limit),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, target_table, env_schema, result_json, status, error_message, created_at
+                    FROM datatools.validation_runs
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+            rows = cur.fetchall()
+    runs = []
+    for r in rows:
+        rid, target, schema, result, status, err, created = r
+        runs.append({
+            "id": rid,
+            "target_table": target,
+            "env_schema": schema or "dev",
+            "result_json": result,
+            "status": status or "completed",
+            "error_message": err,
+            "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
         })
+    return {"runs": runs}
 
-        # Null count per column
-        for col in columns:
-            cname = col["name"]
-            if not validate_identifier(cname):
-                continue
-            with conn.cursor() as cur:
-                cur.execute(
-                    f'SELECT COUNT(*) - COUNT("{cname}") FROM {full_name}',
-                )
-                null_count = cur.fetchone()[0]
-            checks.append({
-                "check_item": f"null_count.{cname}",
-                "result": "PASS" if null_count == 0 else "FAIL",
-                "issue_count": null_count,
-            })
 
-        # Duplicate key groups if key_columns provided
-        if req.key_columns:
-            for k in req.key_columns:
-                if not validate_identifier(k):
-                    continue
-            keys_sql = ", ".join(f'"{k}"' for k in req.key_columns)
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    SELECT COUNT(*) - COUNT(*) AS dup_groups
-                    FROM (
-                      SELECT {keys_sql}, COUNT(*) AS c
-                      FROM {full_name}
-                      GROUP BY {keys_sql}
-                      HAVING COUNT(*) > 1
-                    ) x
-                    """,
-                )
-                # Actually we want count of duplicate groups
-                cur.execute(
-                    f"""
-                    SELECT COUNT(*) FROM (
-                      SELECT {keys_sql}
-                      FROM {full_name}
-                      GROUP BY {keys_sql}
-                      HAVING COUNT(*) > 1
-                    ) x
-                    """,
-                )
-                dup_groups = cur.fetchone()[0]
-            checks.append({
-                "check_item": f"duplicate_keys.({','.join(req.key_columns)})",
-                "result": "PASS" if dup_groups == 0 else "FAIL",
-                "issue_count": dup_groups,
-            })
-
-        result_json = {"checks": checks, "total_rows": total_rows}
-
+@app.get("/validate/runs/{run_id:int}")
+def validate_get_run(run_id: int):
+    """Get a single validation run (for polling status)."""
+    with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO datatools.validation_runs (target_table, result_json)
-                VALUES (%s, %s::jsonb)
+                SELECT id, target_table, env_schema, result_json, status, error_message, created_at
+                FROM datatools.validation_runs
+                WHERE id = %s
                 """,
-                (req.target_table, json.dumps(result_json)),
+                (run_id,),
             )
-        audit_log(conn, "validate_run", req.env_schema, {
-            "target_table": req.target_table,
-            "checks_count": len(checks),
-        })
-
-    return result_json
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    rid, target, schema, result, status, err, created = row
+    return {
+        "id": rid,
+        "target_table": target,
+        "env_schema": schema or "dev",
+        "result_json": result,
+        "status": status or "completed",
+        "error_message": err,
+        "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
+    }
 
 
 @app.get("/health")

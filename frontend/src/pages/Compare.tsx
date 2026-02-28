@@ -385,9 +385,6 @@ export default function Compare() {
                 >
                   {submitting ? 'Submitting…' : 'Submit comparison'}
                 </button>
-                <button type="button" className="secondary" onClick={() => navigate('/compare/runs')}>
-                  View runs
-                </button>
               </div>
             </>
           )}

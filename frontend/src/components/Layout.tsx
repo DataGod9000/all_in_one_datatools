@@ -36,12 +36,16 @@ export default function Layout() {
             <span>Compare</span>
           </NavLink>
           <NavLink to="/compare/runs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <span className="nav-icon">📋</span>
+            <span className="nav-icon">⋮</span>
             <span>Comparison runs</span>
           </NavLink>
-          <NavLink to="/validate" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/validate" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <span className="nav-icon">✓</span>
             <span>Validate</span>
+          </NavLink>
+          <NavLink to="/validate/runs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <span className="nav-icon">⋮</span>
+            <span>Validation runs</span>
           </NavLink>
           <button type="button" className="nav-link nav-link-button" onClick={openQuery}>
             <span className="nav-icon">⎘</span>

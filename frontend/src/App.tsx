@@ -10,6 +10,7 @@ import DDL from './pages/DDL';
 import Compare from './pages/Compare';
 import CompareRuns from './pages/CompareRuns';
 import Validate from './pages/Validate';
+import ValidateRuns from './pages/ValidateRuns';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
                 <Route path="compare" element={<Compare />} />
                 <Route path="compare/runs" element={<CompareRuns />} />
                 <Route path="validate" element={<Validate />} />
+                <Route path="validate/runs" element={<ValidateRuns />} />
               </Route>
             </Routes>
             </BrowserRouter>

@@ -1,46 +1,126 @@
-import { useState } from 'react';
-import { api } from '../api';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getApi } from '../api';
+import type { TableRow } from '../types';
 
 export default function Validate() {
-  const [table, setTable] = useState('users');
+  const navigate = useNavigate();
   const [schema, setSchema] = useState('dev');
-  const [keys, setKeys] = useState('id');
-  const [result, setResult] = useState<{ text: string; error: boolean } | null>(null);
+  const [tables, setTables] = useState<TableRow[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(true);
+  const [selectedTable, setSelectedTable] = useState<TableRow | null>(null);
 
-  const handleValidate = async () => {
-    const keysStr = keys.trim();
-    const res = await api('/validate/run', {
-      target_table: table.trim(),
-      env_schema: schema,
-      key_columns: keysStr ? keysStr.split(',').map((s) => s.trim()).filter(Boolean) : null,
-    });
-    const text = typeof (res.ok ? res.json : res.json?.detail ?? res.json) === 'string'
-      ? (res.ok ? res.json : res.json?.detail ?? res.json)
-      : JSON.stringify(res.ok ? res.json : res.json?.detail ?? res.json, null, 2);
-    setResult({ text, error: !res.ok });
+  const loadTables = useCallback(() => {
+    setTablesLoading(true);
+    const params = new URLSearchParams({ filter: 'tables', env_schema: schema });
+    getApi('/assets/tables?' + params.toString())
+      .then((res) => {
+        setTablesLoading(false);
+        const list = (res.ok && res.json?.tables) ? res.json.tables : [];
+        setTables(list);
+        setSelectedTable((prev) => {
+          if (!prev) return list[0] ?? null;
+          const found = list.find((t) => t.table_name === prev.table_name);
+          return found ?? list[0] ?? null;
+        });
+      })
+      .catch(() => {
+        setTablesLoading(false);
+        setTables([]);
+        setSelectedTable(null);
+      });
+  }, [schema]);
+
+  useEffect(() => {
+    loadTables();
+  }, [loadTables]);
+
+  const handleValidate = () => {
+    const table = selectedTable?.table_name?.trim();
+    if (!table) return;
+    const payload = { target_table: table, env_schema: schema };
+    navigate('/validate/runs', { state: { submitPayload: payload } });
   };
 
   return (
     <section id="view-validate" className="section view">
       <h2>Validate</h2>
-      <p className="subtitle">Run data quality checks on a table: total rows, null counts per column, and duplicate key groups.</p>
-      <div className="panels-grid panels-grid-single">
-        <div className="panel">
-          <p className="panel-title">Run validation</p>
-          <p className="card-desc">Checks row count, null counts per column, and duplicate key groups. Results are written to the audit log.</p>
-          <label>Target table</label>
-          <input type="text" value={table} onChange={(e) => setTable(e.target.value)} placeholder="users" />
-          <label>Environment schema</label>
-          <select value={schema} onChange={(e) => setSchema(e.target.value)}>
-            <option value="dev">dev</option>
-            <option value="prod">prod</option>
-          </select>
-          <label>Key columns (comma-separated, optional)</label>
-          <input type="text" value={keys} onChange={(e) => setKeys(e.target.value)} placeholder="id" />
-          <button type="button" className="primary" onClick={handleValidate}>Run validate</button>
-          {result && (
-            <div className={`result-box ${result.error ? 'error' : 'success'}`}>{result.text}</div>
-          )}
+      <p className="subtitle">Run data quality checks on a table: null counts per column and duplicate rows.</p>
+      <div className="card">
+        <div className="validate-form">
+          <div className="panels-grid">
+            <div className="panel">
+              <p className="panel-title">Run validation</p>
+              <p className="card-desc">Select environment and table, then run. Results appear on the Validation runs page.</p>
+              <div className="compare-row">
+                <label>Environment schema</label>
+                <select value={schema} onChange={(e) => setSchema(e.target.value)}>
+                  <option value="dev">dev</option>
+                  <option value="prod">prod</option>
+                </select>
+              </div>
+              <div className="compare-row">
+                <label>Target table</label>
+                <select
+                  value={selectedTable ? `${selectedTable.env_schema}.${selectedTable.table_name}` : ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const t = tables.find((x) => `${x.env_schema}.${x.table_name}` === val);
+                    setSelectedTable(t ?? null);
+                  }}
+                  disabled={tablesLoading}
+                  aria-label="Select table"
+                >
+                  <option value="">{tablesLoading ? 'Loading…' : 'Select a table'}</option>
+                  {tables.map((t) => (
+                    <option key={`${t.env_schema}.${t.table_name}`} value={`${t.env_schema}.${t.table_name}`}>
+                      {t.table_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="compare-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={handleValidate}
+                  disabled={!selectedTable || tablesLoading}
+                >
+                  Run validate
+                </button>
+              </div>
+            </div>
+            <div className="panel-divider" aria-hidden="true" />
+            <div className="panel validate-info">
+              <p className="panel-title">What we check</p>
+              <div className="validate-checks">
+                <div className="validate-check-card">
+                  <span className="validate-check-icon" aria-hidden>#</span>
+                  <div>
+                    <strong>Total rows</strong>
+                    <p>Row count of the table</p>
+                  </div>
+                </div>
+                <div className="validate-check-card">
+                  <span className="validate-check-icon" aria-hidden>∅</span>
+                  <div>
+                    <strong>Null counts</strong>
+                    <p>Per-column null counts for every column</p>
+                  </div>
+                </div>
+                <div className="validate-check-card">
+                  <span className="validate-check-icon" aria-hidden>≡</span>
+                  <div>
+                    <strong>Duplicate rows</strong>
+                    <p>Full row duplicates (identical values across all columns)</p>
+                  </div>
+                </div>
+              </div>
+              <div className="validate-info-footer">
+                <p>Tables exclude backups and scheduled deletions. Results are stored and viewable on the Validation runs page.</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
