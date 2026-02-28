@@ -5,6 +5,7 @@ SQL-first, Supabase Postgres, audit logging, safe DDL/compare/validate.
 import json
 import os
 import re
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from psycopg import Connection, connect
@@ -28,6 +30,25 @@ app = FastAPI(
     description="Internal DataTools platform: DDL parse/apply, compare, validate.",
     version="1.0.0",
 )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(Exception)
+def catch_all_exception_handler(request, exc: Exception):
+    """Return JSON for unhandled exceptions so frontend can display the real error."""
+    from fastapi.responses import JSONResponse
+    if isinstance(exc, HTTPException):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    detail = str(exc)
+    if "DATABASE_URL" in detail or "relation" in detail or "does not exist" in detail:
+        detail += " Run scripts/setup_datatools_schema.sql in your database."
+    return JSONResponse(status_code=500, content={"detail": detail})
 
 
 @app.on_event("startup")
@@ -303,6 +324,11 @@ class CompareSuggestKeysRequest(BaseModel):
     max_candidates: int = Field(default=5, ge=1, le=20)
 
 
+class ColumnPair(BaseModel):
+    left: str
+    right: str
+
+
 class CompareRunRequest(BaseModel):
     left_table: str
     right_table: str
@@ -311,8 +337,10 @@ class CompareRunRequest(BaseModel):
     left_env_schema: Optional[str] = None
     right_env_schema: Optional[str] = None
     env_schema: Optional[str] = None  # backward compat
-    join_keys: list[str]
+    join_keys: Optional[list[str]] = None  # backward compat: same-name keys
+    join_key_pairs: Optional[list[ColumnPair]] = None  # [{left, right}] manual mapping
     compare_columns: Optional[list[str]] = None
+    compare_column_pairs: Optional[list[ColumnPair]] = None  # [{left, right}] manual mapping
     sample_limit: int = Field(default=50, ge=1, le=1000)
 
 
@@ -648,9 +676,208 @@ def compare_suggest_keys(req: CompareSuggestKeysRequest):
     return {"candidates": top}
 
 
+def _run_compare_background(run_id: int, job: dict) -> None:
+    """Background job: run comparison and update compare_runs row."""
+    try:
+        with get_conn() as conn:
+            conn.autocommit = False
+            left_env = job["left_env"]
+            right_env = job["right_env"]
+            left_table = job["left_table"]
+            right_table = job["right_table"]
+            left_pt_val = job.get("left_pt")
+            right_pt_val = job.get("right_pt")
+            join_on = job["join_on"]
+            pairs = [tuple(p) for p in job["pairs"]]
+            k0_left, k0_right = job["k0_left"], job["k0_right"]
+            compare_pairs = [tuple(p) for p in job.get("compare_pairs", [])]
+            sample_limit = job.get("sample_limit", 50)
+            pt_cond_l = f' AND l."pt" = %s' if left_pt_val else ''
+            pt_cond_r = f' AND r."pt" = %s' if right_pt_val else ''
+
+            with conn.cursor() as cur:
+                if pt_cond_l and pt_cond_r:
+                    cur.execute(
+                        f'SELECT COUNT(*) FROM "{left_env}"."{left_table}" WHERE 1=1 AND "pt" = %s',
+                        (left_pt_val,),
+                    )
+                    left_count = cur.fetchone()[0]
+                    cur.execute(
+                        f'SELECT COUNT(*) FROM "{right_env}"."{right_table}" WHERE 1=1 AND "pt" = %s',
+                        (right_pt_val,),
+                    )
+                    right_count = cur.fetchone()[0]
+                else:
+                    cur.execute(f'SELECT COUNT(*) FROM "{left_env}"."{left_table}"')
+                    left_count = cur.fetchone()[0]
+                    cur.execute(f'SELECT COUNT(*) FROM "{right_env}"."{right_table}"')
+                    right_count = cur.fetchone()[0]
+
+                if pt_cond_l and pt_cond_r:
+                    cur.execute(
+                        f"""
+                        SELECT COUNT(*) FROM "{left_env}"."{left_table}" l
+                        LEFT JOIN "{right_env}"."{right_table}" r ON {join_on} AND r."pt" = %s
+                        WHERE r."{k0_right}" IS NULL AND l."pt" = %s
+                        """,
+                        (right_pt_val, left_pt_val),
+                    )
+                    missing_in_right = cur.fetchone()[0]
+                    cur.execute(
+                        f"""
+                        SELECT COUNT(*) FROM "{right_env}"."{right_table}" r
+                        LEFT JOIN "{left_env}"."{left_table}" l ON {join_on} AND l."pt" = %s
+                        WHERE l."{k0_left}" IS NULL AND r."pt" = %s
+                        """,
+                        (left_pt_val, right_pt_val),
+                    )
+                    missing_in_left = cur.fetchone()[0]
+                    sample_cols = ", ".join(f'l."{lk}" AS left_{lk}, r."{rk}" AS right_{rk}' for lk, rk in pairs)
+                    cur.execute(
+                        f"""
+                        SELECT {sample_cols}
+                        FROM "{left_env}"."{left_table}" l
+                        FULL OUTER JOIN "{right_env}"."{right_table}" r
+                          ON {join_on} AND l."pt" = %s AND r."pt" = %s
+                        WHERE l."{k0_left}" IS NULL OR r."{k0_right}" IS NULL
+                        LIMIT %s
+                        """,
+                        (left_pt_val, right_pt_val, sample_limit),
+                    )
+                else:
+                    cur.execute(
+                        f"""
+                        SELECT COUNT(*) FROM "{left_env}"."{left_table}" l
+                        LEFT JOIN "{right_env}"."{right_table}" r ON {join_on}
+                        WHERE r."{k0_right}" IS NULL
+                        """,
+                    )
+                    missing_in_right = cur.fetchone()[0]
+                    cur.execute(
+                        f"""
+                        SELECT COUNT(*) FROM "{right_env}"."{right_table}" r
+                        LEFT JOIN "{left_env}"."{left_table}" l ON {join_on}
+                        WHERE l."{k0_left}" IS NULL
+                        """,
+                    )
+                    missing_in_left = cur.fetchone()[0]
+                    sample_cols = ", ".join(f'l."{lk}" AS left_{lk}, r."{rk}" AS right_{rk}' for lk, rk in pairs)
+                    cur.execute(
+                        f"""
+                        SELECT {sample_cols}
+                        FROM "{left_env}"."{left_table}" l
+                        FULL OUTER JOIN "{right_env}"."{right_table}" r ON {join_on}
+                        WHERE l."{k0_left}" IS NULL OR r."{k0_right}" IS NULL
+                        LIMIT %s
+                        """,
+                        (sample_limit,),
+                    )
+                rows = cur.fetchall()
+                col_names = [d[0] for d in cur.description]
+                sample = [dict(zip(col_names, r)) for r in rows]
+
+                column_diffs = []
+                if compare_pairs and (pt_cond_l and pt_cond_r or (not pt_cond_l and not pt_cond_r)):
+                    for lk, rk in compare_pairs:
+                        if not validate_identifier(lk) or not validate_identifier(rk):
+                            continue
+                        if pt_cond_l and pt_cond_r:
+                            cur.execute(
+                                f"""
+                                SELECT COUNT(*) AS total,
+                                    SUM(CASE WHEN l."{lk}" IS DISTINCT FROM r."{rk}" THEN 1 ELSE 0 END) AS diff_count
+                                FROM "{left_env}"."{left_table}" l
+                                INNER JOIN "{right_env}"."{right_table}" r
+                                  ON {join_on} AND l."pt" = %s AND r."pt" = %s
+                                """,
+                                (left_pt_val, right_pt_val),
+                            )
+                            tot_row = cur.fetchone()
+                            total_compared = tot_row[0] if tot_row else 0
+                            diff_count = tot_row[1] if tot_row and tot_row[1] is not None else 0
+                            cur.execute(
+                                f"""
+                                SELECT l."{lk}" AS left_val, r."{rk}" AS right_val,
+                                    {", ".join(f'l."{lk2}"' for lk2, _ in pairs)}
+                                FROM "{left_env}"."{left_table}" l
+                                INNER JOIN "{right_env}"."{right_table}" r
+                                  ON {join_on} AND l."pt" = %s AND r."pt" = %s
+                                WHERE l."{lk}" IS DISTINCT FROM r."{rk}"
+                                LIMIT %s
+                                """,
+                                (left_pt_val, right_pt_val, min(20, sample_limit)),
+                            )
+                        else:
+                            cur.execute(
+                                f"""
+                                SELECT COUNT(*) AS total,
+                                    SUM(CASE WHEN l."{lk}" IS DISTINCT FROM r."{rk}" THEN 1 ELSE 0 END) AS diff_count
+                                FROM "{left_env}"."{left_table}" l
+                                INNER JOIN "{right_env}"."{right_table}" r ON {join_on}
+                                """,
+                            )
+                            tot_row = cur.fetchone()
+                            total_compared = tot_row[0] if tot_row else 0
+                            diff_count = tot_row[1] if tot_row and tot_row[1] is not None else 0
+                            cur.execute(
+                                f"""
+                                SELECT l."{lk}" AS left_val, r."{rk}" AS right_val,
+                                    {", ".join(f'l."{lk2}"' for lk2, _ in pairs)}
+                                FROM "{left_env}"."{left_table}" l
+                                INNER JOIN "{right_env}"."{right_table}" r ON {join_on}
+                                WHERE l."{lk}" IS DISTINCT FROM r."{rk}"
+                                LIMIT %s
+                                """,
+                                (min(20, sample_limit),),
+                            )
+                        diff_rows = cur.fetchall()
+                        diff_cols = [d[0] for d in cur.description]
+                        diff_sample = [dict(zip(diff_cols, r)) for r in diff_rows]
+                        column_diffs.append({
+                            "left_col": lk,
+                            "right_col": rk,
+                            "total_compared": int(total_compared or 0),
+                            "diff_count": int(diff_count or 0),
+                            "sample": diff_sample,
+                        })
+
+            result_json = {
+                "left_count": int(left_count),
+                "right_count": int(right_count),
+                "missing_in_right": int(missing_in_right),
+                "missing_in_left": int(missing_in_left),
+                "sample": sample,
+                "column_diffs": column_diffs or [],
+            }
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE datatools.compare_runs
+                    SET result_json = %s::jsonb, status = 'completed'
+                    WHERE id = %s
+                    """,
+                    (json.dumps(result_json), run_id),
+                )
+            audit_log(conn, "compare_run_completed", left_env, {"run_id": run_id, "left_table": left_table, "right_table": right_table})
+            conn.commit()
+    except Exception as e:
+        err_msg = str(e)
+        try:
+            with get_conn() as conn:
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE datatools.compare_runs SET status = 'error', error_message = %s WHERE id = %s",
+                        (err_msg, run_id),
+                    )
+        except Exception:
+            pass
+
+
 @app.post("/compare/run")
 def compare_run(req: CompareRunRequest):
-    """Row counts, missing_in_left/right, sample of differences; store in compare_runs and audit."""
+    """Queue comparison job, return run_id immediately. Comparison runs in background."""
     left_env = req.left_env_schema or req.env_schema or "dev"
     right_env = req.right_env_schema or req.env_schema or "dev"
     validate_env_schema(left_env)
@@ -659,144 +886,67 @@ def compare_run(req: CompareRunRequest):
     validate_table_name(req.right_table)
     left_pt_where = _pt_where(req.left_pt)
     right_pt_where = _pt_where(req.right_pt)
-    for k in req.join_keys:
-        if not validate_identifier(k):
-            raise HTTPException(status_code=400, detail=f"Invalid join key: {k}")
 
-    join_on = " AND ".join(f'l."{k}" = r."{k}"' for k in req.join_keys)
-    compare_cols = req.compare_columns or []
+    if req.join_key_pairs and len(req.join_key_pairs) > 0:
+        pairs = [(p.left.strip(), p.right.strip()) for p in req.join_key_pairs if p.left and p.right]
+        if not pairs:
+            raise HTTPException(status_code=400, detail="At least one join key pair (left, right) required")
+        for left_k, right_k in pairs:
+            if not validate_identifier(left_k) or not validate_identifier(right_k):
+                raise HTTPException(status_code=400, detail=f"Invalid join key: {left_k} ↔ {right_k}")
+        join_on = " AND ".join(f'l."{lk}" = r."{rk}"' for lk, rk in pairs)
+        k0_left, k0_right = pairs[0]
+        stored_join_keys = [f"{lk}:{rk}" for lk, rk in pairs]
+    elif req.join_keys and len(req.join_keys) > 0:
+        for k in req.join_keys:
+            if not validate_identifier(k):
+                raise HTTPException(status_code=400, detail=f"Invalid join key: {k}")
+        pairs = [(k, k) for k in req.join_keys]
+        join_on = " AND ".join(f'l."{k}" = r."{k}"' for k in req.join_keys)
+        k0_left = k0_right = req.join_keys[0]
+        stored_join_keys = req.join_keys
+    else:
+        raise HTTPException(status_code=400, detail="At least one join key required (use join_key_pairs or join_keys)")
+
+    compare_pairs = []
+    if req.compare_column_pairs and len(req.compare_column_pairs) > 0:
+        compare_pairs = [(p.left.strip(), p.right.strip()) for p in req.compare_column_pairs if p.left and p.right]
+    stored_compare = [f"{l}:{r}" for l, r in compare_pairs] if compare_pairs else (req.compare_columns or [])
 
     left_pt_val = req.left_pt if left_pt_where else None
     right_pt_val = req.right_pt if right_pt_where else None
 
     with get_conn() as conn:
-        try:
-            with conn.cursor() as cur:
-                if left_pt_where and right_pt_where:
-                    cur.execute(
-                        f'SELECT COUNT(*) FROM "{left_env}"."{req.left_table}" WHERE 1=1{left_pt_where}',
-                        (left_pt_val,),
-                    )
-                    left_count = cur.fetchone()[0]
-                    cur.execute(
-                        f'SELECT COUNT(*) FROM "{right_env}"."{req.right_table}" WHERE 1=1{right_pt_where}',
-                        (right_pt_val,),
-                    )
-                    right_count = cur.fetchone()[0]
-                    pt_cond_l = f' AND l."pt" = %s' if left_pt_val else ''
-                    pt_cond_r = f' AND r."pt" = %s' if right_pt_val else ''
-                else:
-                    cur.execute(
-                        f'SELECT COUNT(*) FROM "{left_env}"."{req.left_table}"',
-                    )
-                    left_count = cur.fetchone()[0]
-                    cur.execute(
-                        f'SELECT COUNT(*) FROM "{right_env}"."{req.right_table}"',
-                    )
-                    right_count = cur.fetchone()[0]
-                    pt_cond_l, pt_cond_r = '', ''
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO datatools.compare_runs
+                (left_table, right_table, left_env_schema, right_env_schema, left_pt, right_pt, env_schema, join_keys, compare_columns, result_json, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::text[], %s::text[], '{}'::jsonb, 'pending')
+                RETURNING id
+                """,
+                (req.left_table, req.right_table, left_env, right_env, req.left_pt, req.right_pt, left_env, stored_join_keys, stored_compare),
+            )
+            run_id = cur.fetchone()[0]
 
-                k0 = req.join_keys[0]
-                if pt_cond_l and pt_cond_r:
-                    cur.execute(
-                        f"""
-                        SELECT COUNT(*) FROM "{left_env}"."{req.left_table}" l
-                        LEFT JOIN "{right_env}"."{req.right_table}" r ON {join_on} AND r."pt" = %s
-                        WHERE r."{k0}" IS NULL AND l."pt" = %s
-                        """,
-                        (right_pt_val, left_pt_val),
-                    )
-                    missing_in_right = cur.fetchone()[0]
-                    cur.execute(
-                        f"""
-                        SELECT COUNT(*) FROM "{right_env}"."{req.right_table}" r
-                        LEFT JOIN "{left_env}"."{req.left_table}" l ON {join_on} AND l."pt" = %s
-                        WHERE l."{k0}" IS NULL AND r."pt" = %s
-                        """,
-                        (left_pt_val, right_pt_val),
-                    )
-                    missing_in_left = cur.fetchone()[0]
-                    sample_cols = ", ".join(f'l."{k}" AS left_{k}, r."{k}" AS right_{k}' for k in req.join_keys)
-                    cur.execute(
-                        f"""
-                        SELECT {sample_cols}
-                        FROM "{left_env}"."{req.left_table}" l
-                        FULL OUTER JOIN "{right_env}"."{req.right_table}" r
-                          ON {join_on} AND l."pt" = %s AND r."pt" = %s
-                        WHERE l."{k0}" IS NULL OR r."{k0}" IS NULL
-                        LIMIT %s
-                        """,
-                        (left_pt_val, right_pt_val, req.sample_limit),
-                    )
-                else:
-                    cur.execute(
-                        f"""
-                        SELECT COUNT(*) FROM "{left_env}"."{req.left_table}" l
-                        LEFT JOIN "{right_env}"."{req.right_table}" r ON {join_on}
-                        WHERE r."{k0}" IS NULL
-                        """,
-                    )
-                    missing_in_right = cur.fetchone()[0]
-                    cur.execute(
-                        f"""
-                        SELECT COUNT(*) FROM "{right_env}"."{req.right_table}" r
-                        LEFT JOIN "{left_env}"."{req.left_table}" l ON {join_on}
-                        WHERE l."{k0}" IS NULL
-                        """,
-                    )
-                    missing_in_left = cur.fetchone()[0]
-                    sample_cols = ", ".join(f'l."{k}" AS left_{k}, r."{k}" AS right_{k}' for k in req.join_keys)
-                    cur.execute(
-                        f"""
-                        SELECT {sample_cols}
-                        FROM "{left_env}"."{req.left_table}" l
-                        FULL OUTER JOIN "{right_env}"."{req.right_table}" r ON {join_on}
-                        WHERE l."{k0}" IS NULL OR r."{k0}" IS NULL
-                        LIMIT %s
-                        """,
-                        (req.sample_limit,),
-                    )
-                rows = cur.fetchall()
-                col_names = [d[0] for d in cur.description]
-                sample = [dict(zip(col_names, r)) for r in rows]
+    job = {
+        "left_env": left_env,
+        "right_env": right_env,
+        "left_table": req.left_table,
+        "right_table": req.right_table,
+        "left_pt": left_pt_val,
+        "right_pt": right_pt_val,
+        "join_on": join_on,
+        "pairs": [list(p) for p in pairs],
+        "k0_left": k0_left,
+        "k0_right": k0_right,
+        "compare_pairs": [list(p) for p in compare_pairs],
+        "sample_limit": req.sample_limit,
+    }
+    threading.Thread(target=_run_compare_background, args=(run_id, job), daemon=True).start()
 
-            result_json = {
-                "left_count": left_count,
-                "right_count": right_count,
-                "missing_in_right": missing_in_right,
-                "missing_in_left": missing_in_left,
-                "sample": sample,
-            }
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO datatools.compare_runs
-                    (left_table, right_table, left_env_schema, right_env_schema, env_schema, join_keys, compare_columns, result_json, status)
-                    VALUES (%s, %s, %s, %s, %s, %s::text[], %s::text[], %s::jsonb, 'completed')
-                    """,
-                    (req.left_table, req.right_table, left_env, right_env, left_env, req.join_keys, compare_cols, json.dumps(result_json)),
-                )
-            audit_log(conn, "compare_run", req.left_env_schema, {
-                "left_table": req.left_table,
-                "right_table": req.right_table,
-                "join_keys": req.join_keys,
-                "left_count": left_count,
-                "right_count": right_count,
-            })
-            return result_json
-        except Exception as e:
-            err_msg = str(e)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO datatools.compare_runs
-                    (left_table, right_table, left_env_schema, right_env_schema, left_pt, right_pt, env_schema, join_keys, compare_columns, result_json, status, error_message)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::text[], %s::text[], NULL, 'error', %s)
-                    """,
-                    (req.left_table, req.right_table, left_env, right_env, req.left_pt, req.right_pt, left_env, req.join_keys, compare_cols, err_msg),
-                )
-            raise HTTPException(status_code=500, detail=err_msg)
+    return {"run_id": run_id, "status": "pending"}
 
 
 @app.get("/compare/runs")
@@ -812,7 +962,7 @@ def compare_list_runs(
                 cur.execute(
                     """
                     SELECT id, left_table, right_table, env_schema, left_env_schema, right_env_schema,
-                           join_keys, compare_columns, result_json, status, error_message, created_at
+                           left_pt, right_pt, join_keys, compare_columns, result_json, status, error_message, created_at
                     FROM datatools.compare_runs
                     WHERE COALESCE(left_env_schema, env_schema) = %s OR COALESCE(right_env_schema, env_schema) = %s
                     ORDER BY created_at DESC
@@ -824,7 +974,7 @@ def compare_list_runs(
                 cur.execute(
                     """
                     SELECT id, left_table, right_table, env_schema, left_env_schema, right_env_schema,
-                           join_keys, compare_columns, result_json, status, error_message, created_at
+                           left_pt, right_pt, join_keys, compare_columns, result_json, status, error_message, created_at
                     FROM datatools.compare_runs
                     ORDER BY created_at DESC
                     LIMIT %s
@@ -834,7 +984,7 @@ def compare_list_runs(
             rows = cur.fetchall()
     runs = []
     for r in rows:
-        rid, left, right, schema, left_schema, right_schema, keys, comp_cols, result, status, err, created = r
+        rid, left, right, schema, left_schema, right_schema, left_pt, right_pt, keys, comp_cols, result, status, err, created = r
         runs.append({
             "id": rid,
             "left_table": left,
@@ -852,6 +1002,42 @@ def compare_list_runs(
             "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
         })
     return {"runs": runs}
+
+
+@app.get("/compare/runs/{run_id:int}")
+def compare_get_run(run_id: int):
+    """Get a single comparison run (for polling status)."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, left_table, right_table, env_schema, left_env_schema, right_env_schema,
+                       left_pt, right_pt, join_keys, compare_columns, result_json, status, error_message, created_at
+                FROM datatools.compare_runs
+                WHERE id = %s
+                """,
+                (run_id,),
+            )
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    rid, left, right, schema, left_schema, right_schema, left_pt, right_pt, keys, comp_cols, result, status, err, created = row
+    return {
+        "id": rid,
+        "left_table": left,
+        "right_table": right,
+        "env_schema": schema or "dev",
+        "left_env_schema": left_schema or schema or "dev",
+        "right_env_schema": right_schema or schema or "dev",
+        "left_pt": left_pt,
+        "right_pt": right_pt,
+        "join_keys": keys or [],
+        "compare_columns": comp_cols or [],
+        "result_json": result,
+        "status": status or "completed",
+        "error_message": err,
+        "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
+    }
 
 
 @app.post("/validate/run")

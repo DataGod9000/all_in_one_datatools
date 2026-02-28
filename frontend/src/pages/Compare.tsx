@@ -4,10 +4,9 @@ import { api, getApi } from '../api';
 import { useToast } from '../context/ToastContext';
 import type { TableRow } from '../types';
 
-interface Candidate {
-  column: string;
-  data_type: string;
-  score: number;
+interface ColumnPair {
+  left: string;
+  right: string;
 }
 
 export default function Compare() {
@@ -25,10 +24,12 @@ export default function Compare() {
   const [leftPt, setLeftPt] = useState('');
   const [rightPt, setRightPt] = useState('');
 
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [candidatesLoading, setCandidatesLoading] = useState(false);
-  const [joinKeys, setJoinKeys] = useState<string[]>([]);
-  const [compareColumns, setCompareColumns] = useState<Record<string, boolean>>({});
+  const [leftColumns, setLeftColumns] = useState<string[]>([]);
+  const [rightColumns, setRightColumns] = useState<string[]>([]);
+  const [columnsLoading, setColumnsLoading] = useState(false);
+
+  const [joinKeyPairs, setJoinKeyPairs] = useState<ColumnPair[]>([]);
+  const [compareColumnPairs, setCompareColumnPairs] = useState<ColumnPair[]>([]);
   const [sampleLimit, setSampleLimit] = useState(50);
 
   const [submitting, setSubmitting] = useState(false);
@@ -71,66 +72,81 @@ export default function Compare() {
 
   useEffect(() => {
     if (!leftTable || !rightTable) {
-      setCandidates([]);
-      setJoinKeys([]);
-      setCompareColumns({});
-      return;
-    }
-    const lp = leftPt.trim();
-    const rp = rightPt.trim();
-    if (!lp || !rp) {
-      setCandidates([]);
-      setJoinKeys([]);
-      setCompareColumns({});
+      setLeftColumns([]);
+      setRightColumns([]);
+      setJoinKeyPairs([]);
+      setCompareColumnPairs([]);
       return;
     }
     if (leftTable.env_schema === rightTable.env_schema && leftTable.table_name === rightTable.table_name) {
-      setCandidates([]);
-      setJoinKeys([]);
-      setCompareColumns({});
+      setLeftColumns([]);
+      setRightColumns([]);
+      setJoinKeyPairs([]);
+      setCompareColumnPairs([]);
       return;
     }
-    setCandidatesLoading(true);
-    api('/compare/suggest-keys', {
-      left_table: leftTable.table_name,
-      right_table: rightTable.table_name,
-      left_pt: lp,
-      right_pt: rp,
-      left_env_schema: leftTable.env_schema,
-      right_env_schema: rightTable.env_schema,
-      max_candidates: 50,
-    })
-      .then((res) => {
-        setCandidatesLoading(false);
-        if (res.ok && res.json?.candidates) {
-          const c = res.json.candidates as Candidate[];
-          setCandidates(c);
-          setJoinKeys((prev) => prev.filter((k) => c.some((x) => x.column === k)));
-          setCompareColumns((prev) => {
-            const next = { ...prev };
-            c.forEach((x) => {
-              if (!(x.column in next)) next[x.column] = true;
-            });
-            return next;
-          });
-        } else {
-          setCandidates([]);
-        }
+    setColumnsLoading(true);
+    Promise.all([
+      getApi(`/assets/table-columns?env_schema=${encodeURIComponent(leftTable.env_schema)}&table_name=${encodeURIComponent(leftTable.table_name)}`),
+      getApi(`/assets/table-columns?env_schema=${encodeURIComponent(rightTable.env_schema)}&table_name=${encodeURIComponent(rightTable.table_name)}`),
+    ])
+      .then(([leftRes, rightRes]) => {
+        setColumnsLoading(false);
+        setLeftColumns((leftRes.ok && leftRes.json?.columns) ? leftRes.json.columns : []);
+        setRightColumns((rightRes.ok && rightRes.json?.columns) ? rightRes.json.columns : []);
+        setJoinKeyPairs([]);
+        setCompareColumnPairs([]);
       })
       .catch(() => {
-        setCandidatesLoading(false);
-        setCandidates([]);
+        setColumnsLoading(false);
+        setLeftColumns([]);
+        setRightColumns([]);
+        setJoinKeyPairs([]);
+        setCompareColumnPairs([]);
       });
-  }, [leftTable?.env_schema, leftTable?.table_name, rightTable?.env_schema, rightTable?.table_name, leftPt, rightPt]);
+  }, [leftTable?.env_schema, leftTable?.table_name, rightTable?.env_schema, rightTable?.table_name]);
 
-  const toggleJoinKey = (col: string) => {
-    setJoinKeys((prev) =>
-      prev.includes(col) ? prev.filter((k) => k !== col) : [...prev, col]
+  const addJoinKeyPair = () => {
+    setJoinKeyPairs((prev) => [...prev, { left: leftColumns[0] ?? '', right: rightColumns[0] ?? '' }]);
+  };
+
+  const updateJoinKeyPair = (index: number, field: 'left' | 'right', value: string) => {
+    setJoinKeyPairs((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, [field]: value } : p))
     );
   };
 
-  const toggleCompareColumn = (col: string) => {
-    setCompareColumns((prev) => ({ ...prev, [col]: !prev[col] }));
+  const removeJoinKeyPair = (index: number) => {
+    setJoinKeyPairs((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const addCompareColumnPair = () => {
+    setCompareColumnPairs((prev) => [...prev, { left: leftColumns[0] ?? '', right: rightColumns[0] ?? '' }]);
+  };
+
+  const updateCompareColumnPair = (index: number, field: 'left' | 'right', value: string) => {
+    setCompareColumnPairs((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, [field]: value } : p))
+    );
+  };
+
+  const removeCompareColumnPair = (index: number) => {
+    setCompareColumnPairs((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const autoMatchSimilarNames = () => {
+    const common = leftColumns.filter((c) => rightColumns.includes(c));
+    if (common.length === 0) {
+      toast('No columns with matching names found in both tables.', 'error');
+      return;
+    }
+    const pairs: ColumnPair[] = common.map((c) => ({ left: c, right: c }));
+    setCompareColumnPairs((prev) => {
+      const existing = new Set(prev.map((p) => `${p.left}:${p.right}`));
+      const added = pairs.filter((p) => !existing.has(`${p.left}:${p.right}`));
+      return [...prev, ...added];
+    });
+    toast(`Auto-matched ${common.length} column(s) for comparison: ${common.join(', ')}`, 'success');
   };
 
   const handleSubmit = async () => {
@@ -138,39 +154,40 @@ export default function Compare() {
       toast('Select both tables.', 'error');
       return;
     }
-    const leftPtTrim = leftPt.trim();
-    const rightPtTrim = rightPt.trim();
-    if (!leftPtTrim || !rightPtTrim) {
-      toast('PT is required for both tables (e.g. 20260101 for daily, 2026010123 for hourly).', 'error');
+    const leftPtTrim = leftPt.trim() || undefined;
+    const rightPtTrim = rightPt.trim() || undefined;
+    // Sanitize pairs: API requires both left and right on every pair (no undefined/empty)
+    const sanitizePair = (p: ColumnPair): { left: string; right: string } | null => {
+      const left = typeof p.left === 'string' ? p.left.trim() : '';
+      const right = typeof p.right === 'string' ? p.right.trim() : '';
+      return left && right ? { left, right } : null;
+    };
+    const validJoinPairs = joinKeyPairs.map(sanitizePair).filter((p): p is { left: string; right: string } => p !== null);
+    if (validJoinPairs.length === 0) {
+      toast('Add at least one join key pair (left column ↔ right column).', 'error');
       return;
     }
-    if (joinKeys.length === 0) {
-      toast('Select at least one join key.', 'error');
-      return;
-    }
-    const cols = Object.entries(compareColumns)
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    setSubmitting(true);
-    const res = await api('/compare/run', {
+    const validComparePairs = compareColumnPairs.map(sanitizePair).filter((p): p is { left: string; right: string } => p !== null);
+    const payload: Record<string, unknown> = {
       left_table: leftTable.table_name,
       right_table: rightTable.table_name,
-      left_pt: leftPtTrim,
-      right_pt: rightPtTrim,
-      left_env_schema: leftTable.env_schema,
-      right_env_schema: rightTable.env_schema,
-      join_keys: joinKeys,
-      compare_columns: cols.length ? cols : null,
+      left_env_schema: leftTable.env_schema ?? 'dev',
+      right_env_schema: rightTable.env_schema ?? 'dev',
+      join_keys: validJoinPairs.map((p) => p.left),
+      join_key_pairs: validJoinPairs,
+      compare_column_pairs: validComparePairs.length > 0 ? validComparePairs : null,
       sample_limit: sampleLimit,
-    });
+    };
+    if (leftPtTrim) payload.left_pt = leftPtTrim;
+    if (rightPtTrim) payload.right_pt = rightPtTrim;
+
+    toast('Starting comparison…', 'success');
+    navigate('/compare/runs', { state: { submitPayload: payload } });
     setSubmitting(false);
-    if (res.ok) {
-      toast('Comparison submitted successfully.', 'success');
-      navigate('/compare/runs');
-    } else {
-      toast(res.json?.detail || 'Comparison failed', 'error');
-    }
   };
+
+  const canShowMapping = leftTable && rightTable;
+  const hasColumns = leftColumns.length > 0 && rightColumns.length > 0;
 
   return (
     <section id="view-compare" className="section view">
@@ -203,10 +220,10 @@ export default function Compare() {
                   </option>
                 ))}
               </select>
-              <label>PT <span className="compare-required">*</span></label>
+              <label>PT</label>
               <input
                 type="text"
-                placeholder="e.g. 20260101 (daily) or 2026010123 (hourly)"
+                placeholder="Optional: e.g. 20260101 (daily) or 2026010123 (hourly). Leave blank for non-partitioned tables."
                 value={leftPt}
                 onChange={(e) => setLeftPt(e.target.value)}
               />
@@ -233,10 +250,10 @@ export default function Compare() {
                   </option>
                 ))}
               </select>
-              <label>PT <span className="compare-required">*</span></label>
+              <label>PT</label>
               <input
                 type="text"
-                placeholder="e.g. 20260101 (daily) or 2026010123 (hourly)"
+                placeholder="Optional: e.g. 20260101 (daily) or 2026010123 (hourly). Leave blank for non-partitioned tables."
                 value={rightPt}
                 onChange={(e) => setRightPt(e.target.value)}
               />
@@ -245,49 +262,106 @@ export default function Compare() {
 
           {(leftTablesLoading || rightTablesLoading) && <p className="text-muted">Loading tables…</p>}
 
-          {leftTable && rightTable && (
+          {canShowMapping && (
             <>
               <div className="compare-section">
                 <h4>Join keys</h4>
-                <p className="compare-hint">Select columns to join the two tables.</p>
-                {candidatesLoading ? (
-                  <p className="text-muted">Loading compatible columns…</p>
-                ) : candidates.length === 0 ? (
-                  <p className="text-muted">No common columns with matching types.</p>
+                <p className="compare-hint">Map left columns to right columns for the join. At least one pair required.</p>
+                {columnsLoading ? (
+                  <p className="text-muted">Loading columns…</p>
+                ) : !hasColumns ? (
+                  <p className="text-muted">No columns found. Ensure both tables exist and have columns.</p>
                 ) : (
-                  <div className="compare-checkboxes">
-                    {candidates.map((c) => (
-                      <label key={c.column} className="compare-check">
-                        <input
-                          type="checkbox"
-                          checked={joinKeys.includes(c.column)}
-                          onChange={() => toggleJoinKey(c.column)}
-                        />
-                        <span>{c.column}</span>
-                        <span className="compare-type">({c.data_type})</span>
-                      </label>
-                    ))}
-                  </div>
+                  <>
+                    <div className="compare-pairs">
+                      {joinKeyPairs.map((pair, i) => (
+                        <div key={i} className="compare-pair-row">
+                          <select
+                            value={pair.left}
+                            onChange={(e) => updateJoinKeyPair(i, 'left', e.target.value)}
+                            className="compare-select"
+                          >
+                            <option value="">— Left —</option>
+                            {leftColumns.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <span className="compare-pair-arrow">↔</span>
+                          <select
+                            value={pair.right}
+                            onChange={(e) => updateJoinKeyPair(i, 'right', e.target.value)}
+                            className="compare-select"
+                          >
+                            <option value="">— Right —</option>
+                            {rightColumns.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="compare-remove-btn"
+                            onClick={() => removeJoinKeyPair(i)}
+                            aria-label="Remove pair"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" className="secondary compare-add-btn" onClick={addJoinKeyPair}>
+                      + Add join key
+                    </button>
+                  </>
                 )}
               </div>
 
               <div className="compare-section">
                 <h4>Compare columns</h4>
-                <p className="compare-hint">Tick columns for column-wise value comparison.</p>
-                {candidatesLoading ? null : candidates.length === 0 ? null : (
-                  <div className="compare-checkboxes">
-                    {candidates.map((c) => (
-                      <label key={c.column} className="compare-check">
-                        <input
-                          type="checkbox"
-                          checked={!!compareColumns[c.column]}
-                          onChange={() => toggleCompareColumn(c.column)}
-                        />
-                        <span>{c.column}</span>
-                        <span className="compare-type">({c.data_type})</span>
-                      </label>
-                    ))}
-                  </div>
+                <p className="compare-hint">Map columns for value comparison (optional).</p>
+                {!columnsLoading && hasColumns && (
+                  <>
+                    <button type="button" className="secondary compare-add-btn" onClick={autoMatchSimilarNames}>
+                      Auto-match similar names
+                    </button>
+                    <div className="compare-pairs">
+                      {compareColumnPairs.map((pair, i) => (
+                        <div key={i} className="compare-pair-row">
+                          <select
+                            value={pair.left}
+                            onChange={(e) => updateCompareColumnPair(i, 'left', e.target.value)}
+                            className="compare-select"
+                          >
+                            <option value="">— Left —</option>
+                            {leftColumns.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <span className="compare-pair-arrow">↔</span>
+                          <select
+                            value={pair.right}
+                            onChange={(e) => updateCompareColumnPair(i, 'right', e.target.value)}
+                            className="compare-select"
+                          >
+                            <option value="">— Right —</option>
+                            {rightColumns.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="compare-remove-btn"
+                            onClick={() => removeCompareColumnPair(i)}
+                            aria-label="Remove pair"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" className="secondary compare-add-btn" onClick={addCompareColumnPair}>
+                      + Add compare column
+                    </button>
+                  </>
                 )}
               </div>
 
@@ -307,7 +381,7 @@ export default function Compare() {
                   type="button"
                   className="primary"
                   onClick={handleSubmit}
-                  disabled={submitting || joinKeys.length === 0 || !leftPt.trim() || !rightPt.trim()}
+                  disabled={submitting || joinKeyPairs.filter((p) => p.left && p.right).length === 0}
                 >
                   {submitting ? 'Submitting…' : 'Submit comparison'}
                 </button>

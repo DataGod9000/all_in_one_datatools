@@ -3,6 +3,7 @@ import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { QueryProvider } from './context/QueryContext';
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 import Home from './pages/Home';
 import Assets from './pages/Assets';
 import DDL from './pages/DDL';
@@ -12,10 +13,11 @@ import Validate from './pages/Validate';
 
 function App() {
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <QueryProvider>
-          <BrowserRouter>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <QueryProvider>
+            <BrowserRouter>
             <Routes>
               <Route path="/" element={<Layout />}>
                 <Route index element={<Home />} />
@@ -26,10 +28,11 @@ function App() {
                 <Route path="validate" element={<Validate />} />
               </Route>
             </Routes>
-          </BrowserRouter>
-        </QueryProvider>
-      </ToastProvider>
-    </ThemeProvider>
+            </BrowserRouter>
+          </QueryProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

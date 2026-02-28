@@ -6,12 +6,14 @@ export async function api(path: string, body?: object): Promise<{ ok: boolean; j
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
+  const text = await res.text();
   let json: any;
   try {
-    const text = await res.text();
     json = text ? JSON.parse(text) : {};
   } catch {
-    json = { detail: res.statusText || 'Request failed' };
+    json = {
+      detail: res.ok ? 'Invalid response from server' : `${res.status} ${res.statusText} - ${text.slice(0, 200)}`,
+    };
   }
   return { ok: res.ok, json };
 }
