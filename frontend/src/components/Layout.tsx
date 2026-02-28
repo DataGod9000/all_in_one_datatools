@@ -1,6 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
-import { useQuery } from '../context/QueryContext';
 
 const LogoIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -12,7 +11,6 @@ const LogoIcon = () => (
 
 export default function Layout() {
   const { toggle } = useTheme();
-  const openQuery = useQuery();
 
   return (
     <div className="app-layout">
@@ -36,7 +34,7 @@ export default function Layout() {
             <span>Compare</span>
           </NavLink>
           <NavLink to="/compare/runs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <span className="nav-icon">⋮</span>
+            <span className="nav-icon">⇉</span>
             <span>Comparison runs</span>
           </NavLink>
           <NavLink to="/validate" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
@@ -44,13 +42,13 @@ export default function Layout() {
             <span>Validate</span>
           </NavLink>
           <NavLink to="/validate/runs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <span className="nav-icon">⋮</span>
+            <span className="nav-icon">◫</span>
             <span>Validation runs</span>
           </NavLink>
-          <button type="button" className="nav-link nav-link-button" onClick={openQuery}>
+          <NavLink to="/query" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <span className="nav-icon">⎘</span>
             <span>Run query</span>
-          </button>
+          </NavLink>
         </nav>
         <div className="sidebar-section">External</div>
         <nav className="sidebar-nav">

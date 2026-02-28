@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { QueryProvider } from './context/QueryContext';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 import Home from './pages/Home';
@@ -11,14 +10,14 @@ import Compare from './pages/Compare';
 import CompareRuns from './pages/CompareRuns';
 import Validate from './pages/Validate';
 import ValidateRuns from './pages/ValidateRuns';
+import Query from './pages/Query';
 
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
         <ToastProvider>
-          <QueryProvider>
-            <BrowserRouter>
+          <BrowserRouter>
             <Routes>
               <Route path="/" element={<Layout />}>
                 <Route index element={<Home />} />
@@ -28,10 +27,10 @@ function App() {
                 <Route path="compare/runs" element={<CompareRuns />} />
                 <Route path="validate" element={<Validate />} />
                 <Route path="validate/runs" element={<ValidateRuns />} />
+                <Route path="query" element={<Query />} />
               </Route>
             </Routes>
             </BrowserRouter>
-          </QueryProvider>
         </ToastProvider>
       </ThemeProvider>
     </ErrorBoundary>

@@ -1261,7 +1261,7 @@ def assets_list_tables(
                             WHERE env_schema IN ({placeholders})
                               AND table_name NOT LIKE 'back_up_%%'
                               AND table_name NOT LIKE 'to_be_deleted_%%'
-                            ORDER BY env_schema, table_name
+                            ORDER BY created_at DESC NULLS LAST, env_schema, table_name
                             """,
                             schemas,
                         )
@@ -1311,7 +1311,7 @@ def assets_list_tables(
                         SELECT env_schema, renamed_table_name, delete_after
                         FROM datatools.deletion_schedule
                         WHERE env_schema IN ({placeholders})
-                        ORDER BY env_schema, renamed_table_name
+                        ORDER BY created_at DESC, env_schema, renamed_table_name
                         """,
                         schemas,
                     )
@@ -1590,7 +1590,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @app.post("/query/run")
 def query_run(req: RunQueryRequest):
-    """Execute a single read-only SELECT query. Max 500 rows. Only SELECT is allowed."""
+    """Execute a single SELECT or INSERT query. SELECT: max 500 rows. INSERT: allowed."""
     sql = (req.sql or "").strip()
     if not sql:
         raise HTTPException(status_code=400, detail="SQL is empty")
@@ -1598,22 +1598,25 @@ def query_run(req: RunQueryRequest):
     sql_no_comments = re.sub(r"--[^\n]*", "", sql)
     sql_no_comments = re.sub(r"/\*.*?\*/", "", sql_no_comments, flags=re.DOTALL)
     sql_no_comments = sql_no_comments.strip().upper()
-    if not sql_no_comments.startswith("SELECT"):
-        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed")
+    if not sql_no_comments.startswith("SELECT") and not sql_no_comments.startswith("INSERT"):
+        raise HTTPException(status_code=400, detail="Only SELECT and INSERT queries are allowed")
     if ";" in sql_no_comments.rstrip(";"):
         idx = sql_no_comments.find(";")
         if idx >= 0 and sql_no_comments[idx + 1 :].strip():
             raise HTTPException(status_code=400, detail="Only a single statement is allowed")
-    # Append LIMIT if not present to cap results
-    if "LIMIT" not in sql_no_comments:
+    # For SELECT (without RETURNING), append LIMIT if not present to cap results
+    if sql_no_comments.startswith("SELECT") and "LIMIT" not in sql_no_comments:
         sql = sql.rstrip().rstrip(";") + " LIMIT 500"
     try:
         with get_conn() as conn:
+            conn.autocommit = True  # INSERT needs commit; autocommit handles it
             with conn.cursor() as cur:
                 cur.execute(sql)
-                columns = [d[0] for d in cur.description] if cur.description else []
-                rows = cur.fetchall()
-        return {"columns": columns, "rows": [list(r) for r in rows]}
+                if cur.description:
+                    columns = [d[0] for d in cur.description]
+                    rows = cur.fetchall()
+                    return {"columns": columns, "rows": [list(r) for r in rows]}
+                return {"status": "ok", "rows_affected": cur.rowcount}
     except HTTPException:
         raise
     except Exception as e:
