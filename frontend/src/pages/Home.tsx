@@ -5,7 +5,7 @@ export default function Home() {
     <section className="view hero-section" id="view-home">
       <div className="hero">
         <h1>Schema, compare & validate <span className="accent">in one place</span></h1>
-        <p>Parse and apply DDL, suggest join keys, run table comparisons, and validate data quality—all from your browser.</p>
+        <p>Parse and apply DDL, suggest join keys, run table comparisons, and validate data quality, all from your browser.</p>
         <div className="feature-cards feature-cards-grid-6">
           <Link to="/assets" className="feature-card">
             <h3>Assets</h3>
