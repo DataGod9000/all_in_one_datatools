@@ -671,6 +671,65 @@
       line-height: 1.55;
     }
 
+    /* Validation result modal */
+    .validate-result-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .validate-result-card {
+      background: var(--content-bg);
+      border: 1px solid var(--content-border);
+      border-radius: var(--radius-sm);
+      padding: 1rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .validate-result-card-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+    .validate-result-card-value {
+      font-size: 1.35rem;
+      font-weight: 700;
+      font-family: 'DM Mono', monospace;
+      color: var(--text);
+    }
+    .validate-null-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.5rem;
+    }
+    .validate-null-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 0.85rem;
+      background: var(--content-bg);
+      border: 1px solid var(--content-border-light);
+      border-radius: var(--radius-sm);
+    }
+    .validate-null-col {
+      font-size: 0.85rem;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .validate-null-val {
+      font-size: 0.9rem;
+      font-family: 'DM Mono', monospace;
+      color: var(--text-muted);
+    }
+    .validate-null-val.has-nulls {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
     /* Status badges */
     .status-badge {
       display: inline-block;

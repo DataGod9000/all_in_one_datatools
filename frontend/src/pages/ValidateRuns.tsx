@@ -208,25 +208,26 @@ export default function ValidateRuns() {
             )}
             {detailsOpen.status === 'completed' && detailsOpen.result_json && (
               <>
-                <h4 className="details-sample-title">Results</h4>
-                <div className="details-stats">
-                  <div className="details-row">
-                    <span className="details-label">Total rows</span>
-                    <span>{Number(detailsOpen.result_json.total_rows ?? 0).toLocaleString()}</span>
+                <div className="validate-result-summary">
+                  <div className="validate-result-card">
+                    <span className="validate-result-card-label">Total rows</span>
+                    <span className="validate-result-card-value">{Number(detailsOpen.result_json.total_rows ?? 0).toLocaleString()}</span>
                   </div>
-                  <div className="details-row">
-                    <span className="details-label">Duplicate rows</span>
-                    <span>{Number(detailsOpen.result_json.duplicate_rows ?? 0).toLocaleString()}</span>
+                  <div className="validate-result-card">
+                    <span className="validate-result-card-label">Duplicate rows</span>
+                    <span className="validate-result-card-value">{Number(detailsOpen.result_json.duplicate_rows ?? 0).toLocaleString()}</span>
                   </div>
                 </div>
                 {detailsOpen.result_json.null_counts && detailsOpen.result_json.null_counts.length > 0 && (
                   <>
                     <h4 className="details-sample-title">Null counts per column</h4>
-                    <div className="details-stats">
+                    <div className="validate-null-grid">
                       {detailsOpen.result_json.null_counts.map((nc, i) => (
-                        <div key={i} className="details-row">
-                          <span className="details-label">{nc.column}</span>
-                          <span>{Number(nc.null_count ?? 0).toLocaleString()}</span>
+                        <div key={i} className="validate-null-item">
+                          <span className="validate-null-col">{nc.column}</span>
+                          <span className={`validate-null-val ${Number(nc.null_count ?? 0) > 0 ? 'has-nulls' : ''}`}>
+                            {Number(nc.null_count ?? 0).toLocaleString()}
+                          </span>
                         </div>
                       ))}
                     </div>
