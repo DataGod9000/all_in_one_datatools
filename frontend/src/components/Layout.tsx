@@ -27,7 +27,7 @@ export default function Layout() {
           </NavLink>
           <NavLink to="/create-table" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <span className="nav-icon">⟨⟩</span>
-            <span>DDL</span>
+            <span>Create table</span>
           </NavLink>
           <NavLink to="/compare" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <span className="nav-icon">⇄</span>
