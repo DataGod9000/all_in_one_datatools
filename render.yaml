@@ -1,0 +1,13 @@
+# Render uses the Dockerfile automatically when present.
+# Set env vars in Render Dashboard: DATABASE_URL (required), ALLOWED_SCHEMAS, OPENAI_API_KEY
+services:
+  - type: web
+    name: datatools-portfolio
+    env: docker
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ALLOWED_SCHEMAS
+        value: dev,prod
+      - key: OPENAI_API_KEY
+        sync: false

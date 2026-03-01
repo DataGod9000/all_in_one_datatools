@@ -18,6 +18,11 @@ const proxyTarget = { target: 'http://127.0.0.1:8000', changeOrigin: true }
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    outDir: '../static',
+    emptyOutDir: true,
+    assetsDir: 'build',  // avoid /assets/ conflict with backend API
+  },
   server: {
     port: 5173,
     proxy: {

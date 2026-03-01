@@ -1586,6 +1586,8 @@ def assets_restore_backup(req: RestoreBackupRequest):
 # ---------- Frontend (static) ----------
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+# SPA routes: serve index.html for client-side routing
+SPA_PATHS = frozenset({"/", "/assets", "/ddl", "/compare", "/validate", "/compare/runs", "/validate/runs", "/query"})
 
 
 @app.post("/query/run")
@@ -1623,10 +1625,17 @@ def query_run(req: RunQueryRequest):
         raise HTTPException(status_code=400, detail=f"Query failed: {e!s}") from e
 
 
-@app.get("/")
-def index():
-    """Serve the DataTools Portfolio UI."""
+@app.get("/{full_path:path}")
+def serve_frontend(full_path: str):
+    """Serve React SPA: static files when they exist, else index.html for client-side routing."""
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
-        raise HTTPException(status_code=404, detail="Frontend not found")
+        raise HTTPException(status_code=404, detail="Frontend not found. Run: cd frontend && npm run build")
+    # Serve existing static files (build/*.js, build/*.css, etc.)
+    if full_path and full_path != "":
+        safe_path = Path(full_path)
+        if not safe_path.is_absolute() and ".." not in full_path:
+            file_path = (STATIC_DIR / full_path).resolve()
+            if file_path.is_file() and str(file_path).startswith(str(STATIC_DIR.resolve())):
+                return FileResponse(file_path)
     return FileResponse(index_path)
