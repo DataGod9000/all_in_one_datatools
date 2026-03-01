@@ -25,7 +25,7 @@ export default function Layout() {
             <span className="nav-icon">▦</span>
             <span>Assets</span>
           </NavLink>
-          <NavLink to="/ddl" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/create-table" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <span className="nav-icon">⟨⟩</span>
             <span>DDL</span>
           </NavLink>

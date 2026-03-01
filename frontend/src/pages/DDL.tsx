@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import { api } from '../api';
 import { useToast } from '../context/ToastContext';
+import { TnSelect } from '../components/TnSelect';
+import { AppSelect } from '../components/AppSelect';
 import type { ParsedDdl, ColumnComment } from '../types';
 
 const TABLE_NAME_GOVERNANCE = /^(ods|dws|dim|ads|dwd)_josephco_(trade|growth)_[a-zA-Z0-9_]+_(di|df|hi|hf)$/i;
@@ -40,13 +42,7 @@ interface ColumnRow {
 
 export default function DDL() {
   const toast = useToast();
-  const [ddl, setDdl] = useState(`CREATE TABLE kline_candles (
-  open_time BIGINT NOT NULL,
-  open NUMERIC(20,8) NOT NULL,
-  high NUMERIC(20,8) NOT NULL,
-  low NUMERIC(20,8) NOT NULL,
-  close NUMERIC(20,8) NOT NULL
-);`);
+  const [ddl, setDdl] = useState('');
   const [env, setEnv] = useState('dev');
   const [layer, setLayer] = useState('ods');
   const [domain, setDomain] = useState('growth');
@@ -215,7 +211,7 @@ export default function DDL() {
   };
 
   return (
-    <section id="view-ddl" className="section view">
+    <section id="view-create-table" className="section view">
       <h2>Create table</h2>
       <p className="subtitle">
         Paste your DDL, click <strong>Parse</strong>, then set the table name using the selectors below — or click <strong>Suggest name with AI</strong> to auto-fill. Add column comments in English &amp; Chinese, then <strong>Create table</strong>.
@@ -228,49 +224,83 @@ export default function DDL() {
               className="ddl-input"
               value={ddl}
               onChange={(e) => setDdl(e.target.value)}
-              placeholder="CREATE TABLE kline_candles (...)"
+              placeholder={`CREATE TABLE kline_candles (
+  open_time BIGINT NOT NULL,
+  open NUMERIC(20,8) NOT NULL,
+  high NUMERIC(20,8) NOT NULL,
+  low NUMERIC(20,8) NOT NULL,
+  close NUMERIC(20,8) NOT NULL
+);`}
             />
           </div>
           <div className="row-inline">
             <div className="env-wrap">
               <label>Environment</label>
-              <select value={env} onChange={(e) => setEnv(e.target.value)}>
-                <option value="dev">dev</option>
-                <option value="prod">prod</option>
-              </select>
+              <AppSelect
+                value={env}
+                onChange={setEnv}
+                options={[
+                  { value: 'dev', label: 'dev' },
+                  { value: 'prod', label: 'prod' },
+                ]}
+              />
             </div>
             <button type="button" className="primary" onClick={handleParse}>Parse &amp; edit columns</button>
           </div>
           {parsed && columns.length > 0 && (
             <div id="columns-block" className="columns-block visible">
               <div className="table-name-builder">
-                <span className="table-name-builder-label">Table Name</span>
+                <div className="tn-header">
+                  <span className="table-name-builder-label">Table Name</span>
+                  <span className="tn-pattern-hint">layer · josephco · domain · core · granularity</span>
+                </div>
                 <div className="table-name-parts">
-                  <select id="tn-layer" value={layer} onChange={(e) => setLayer(e.target.value)}>
-                    <option value="ods">ODS · Source</option>
-                    <option value="dws">DWS · Summary</option>
-                    <option value="dim">DIM · Dimension</option>
-                    <option value="ads">ADS · Output</option>
-                    <option value="dwd">DWD · Detail</option>
-                  </select>
-                  <span className="tn-sep">_josephco_</span>
-                  <select id="tn-domain" value={domain} onChange={(e) => setDomain(e.target.value)}>
-                    <option value="trade">trade</option>
-                    <option value="growth">growth</option>
-                  </select>
-                  <span className="tn-sep">_</span>
-                  <input type="text" id="tn-core" value={core} onChange={(e) => handleCoreChange(e.target.value)} placeholder="core_name" />
-                  <span className="tn-sep">_</span>
-                  <select id="tn-granularity" value={granularity} onChange={(e) => setGranularity(e.target.value)}>
-                    <option value="di">DI · Daily Inc.</option>
-                    <option value="df">DF · Daily Full</option>
-                    <option value="hi">HI · Hourly Inc.</option>
-                    <option value="hf">HF · Hourly Full</option>
-                  </select>
+                  <div className="tn-segment tn-segment-select tn-segment-dropdown">
+                    <TnSelect
+                      id="tn-layer"
+                      value={layer}
+                      onChange={setLayer}
+                      options={[
+                        { value: 'ods', label: 'ODS · Source' },
+                        { value: 'dws', label: 'DWS · Summary' },
+                        { value: 'dim', label: 'DIM · Dimension' },
+                        { value: 'ads', label: 'ADS · Output' },
+                        { value: 'dwd', label: 'DWD · Detail' },
+                      ]}
+                    />
+                  </div>
+                  <span className="tn-connector">josephco</span>
+                  <div className="tn-segment tn-segment-select tn-segment-dropdown">
+                    <TnSelect
+                      id="tn-domain"
+                      value={domain}
+                      onChange={setDomain}
+                      options={[
+                        { value: 'trade', label: 'trade' },
+                        { value: 'growth', label: 'growth' },
+                      ]}
+                    />
+                  </div>
+                  <div className="tn-segment tn-segment-input">
+                    <input type="text" id="tn-core" value={core} onChange={(e) => handleCoreChange(e.target.value)} placeholder="table_name" />
+                  </div>
+                  <div className="tn-segment tn-segment-select tn-segment-dropdown">
+                    <TnSelect
+                      id="tn-granularity"
+                      value={granularity}
+                      onChange={setGranularity}
+                      options={[
+                        { value: 'di', label: 'DI · Daily Inc.' },
+                        { value: 'df', label: 'DF · Daily Full' },
+                        { value: 'hi', label: 'HI · Hourly Inc.' },
+                        { value: 'hf', label: 'HF · Hourly Full' },
+                      ]}
+                    />
+                  </div>
                 </div>
                 <div className="table-name-preview">
-                  <span className="table-name-preview-label">Full name:</span>
-                  <code>{assembledName || ''}</code>
+                  <span className="tn-preview-label">Full name</span>
+                  <code className="tn-preview-output">{assembledName || '—'}</code>
                 </div>
               </div>
               <div className="columns-inner">
@@ -288,14 +318,11 @@ export default function DDL() {
                       <tr key={c.index} data-index={c.index}>
                         <td className="col-name">{c.name}</td>
                         <td className="type-cell">
-                          <select
+                          <AppSelect
                             value={c.type}
-                            onChange={(e) => updateColumn(c.index, { type: e.target.value })}
-                          >
-                            {ALLOWED_TYPES.map((t) => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => updateColumn(c.index, { type: v })}
+                            options={ALLOWED_TYPES.map((t) => ({ value: t, label: t }))}
+                          />
                         </td>
                         <td className="comment-cell">
                           <input

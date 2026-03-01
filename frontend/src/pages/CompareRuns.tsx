@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getApi, api } from '../api';
 import { useToast } from '../context/ToastContext';
+import { AppSelect } from '../components/AppSelect';
 
 interface CompareRun {
   id: number;
@@ -55,11 +56,15 @@ function statusBadge(status: string) {
   }
 }
 
-function formatColumnPairs(arr: string[] | undefined): string {
-  if (!arr?.length) return '';
-  return arr
-    .map((s) => (s.includes(':') ? s.replace(':', ' ↔ ') : s))
-    .join(', ');
+function parseColumnPairs(arr: string[] | undefined): { left: string; right: string }[] {
+  if (!arr?.length) return [];
+  return arr.map((s) => {
+    if (s.includes(':')) {
+      const [left, right] = s.split(':');
+      return { left: left || '', right: right || '' };
+    }
+    return { left: s, right: s };
+  });
 }
 
 export default function CompareRuns() {
@@ -168,16 +173,17 @@ export default function CompareRuns() {
         <div className="assets-toolbar">
           <div className="assets-toolbar-controls">
             <div className="assets-toolbar-row">
-              <select
+              <AppSelect
                 className="assets-env-select"
                 value={envFilter}
-                onChange={(e) => setEnvFilter(e.target.value)}
+                onChange={setEnvFilter}
+                options={[
+                  { value: 'dev', label: 'dev' },
+                  { value: 'prod', label: 'prod' },
+                ]}
+                placeholder="All environments"
                 aria-label="Filter by environment"
-              >
-                <option value="">All environments</option>
-                <option value="dev">dev</option>
-                <option value="prod">prod</option>
-              </select>
+              />
               <button type="button" className="primary" onClick={() => navigate('/compare')}>
                 New comparison
               </button>
@@ -237,19 +243,47 @@ export default function CompareRuns() {
       {detailsOpen && (
         <div className="modal-overlay visible" onClick={() => setDetailsOpen(null)}>
           <div className="modal-card modal-details" onClick={(e) => e.stopPropagation()}>
-            <h3>Compare: {detailsOpen.left_env_schema ?? detailsOpen.env_schema}.{detailsOpen.left_table} (PT {detailsOpen.left_pt ?? '—'}) vs {detailsOpen.right_env_schema ?? detailsOpen.env_schema}.{detailsOpen.right_table} (PT {detailsOpen.right_pt ?? '—'})</h3>
+            <div className="compare-details-header">
+              <div className="compare-details-title-row">
+                <span className="details-label">Left</span>
+                <code className="compare-details-table">
+                  {detailsOpen.left_env_schema ?? detailsOpen.env_schema}.{detailsOpen.left_table}
+                  {detailsOpen.left_pt ? ` (PT ${detailsOpen.left_pt})` : ''}
+                </code>
+              </div>
+              <div className="compare-details-vs">vs</div>
+              <div className="compare-details-title-row">
+                <span className="details-label">Right</span>
+                <code className="compare-details-table">
+                  {detailsOpen.right_env_schema ?? detailsOpen.env_schema}.{detailsOpen.right_table}
+                  {detailsOpen.right_pt ? ` (PT ${detailsOpen.right_pt})` : ''}
+                </code>
+              </div>
+            </div>
             <div className="details-stats">
               <div className="details-row">
                 <span className="details-label">Status</span>
                 <span>{statusBadge(detailsOpen.status)}</span>
               </div>
-              <div className="details-row">
+              <div className="details-row details-row-columns">
                 <span className="details-label">Join keys</span>
-                <span>{formatColumnPairs(detailsOpen.join_keys) || '—'}</span>
+                <div className="details-pairs-wrap">
+                  {parseColumnPairs(detailsOpen.join_keys).length > 0
+                    ? parseColumnPairs(detailsOpen.join_keys).map((p, i) => (
+                        <span key={i} className="details-pair-tag">{p.left} ↔ {p.right}</span>
+                      ))
+                    : '—'}
+                </div>
               </div>
-              <div className="details-row">
+              <div className="details-row details-row-columns">
                 <span className="details-label">Compare columns</span>
-                <span>{formatColumnPairs(detailsOpen.compare_columns) || '—'}</span>
+                <div className="details-pairs-wrap">
+                  {parseColumnPairs(detailsOpen.compare_columns).length > 0
+                    ? parseColumnPairs(detailsOpen.compare_columns).map((p, i) => (
+                        <span key={i} className="details-pair-tag">{p.left} ↔ {p.right}</span>
+                      ))
+                    : '—'}
+                </div>
               </div>
             </div>
             <div className="modal-details-body">

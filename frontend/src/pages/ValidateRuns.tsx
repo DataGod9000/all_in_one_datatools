@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getApi, api } from '../api';
 import { useToast } from '../context/ToastContext';
+import { AppSelect } from '../components/AppSelect';
 
 interface ValidateRun {
   id: number;
@@ -129,16 +130,17 @@ export default function ValidateRuns() {
         <div className="assets-toolbar">
           <div className="assets-toolbar-controls">
             <div className="assets-toolbar-row">
-              <select
+              <AppSelect
                 className="assets-env-select"
                 value={envFilter}
-                onChange={(e) => setEnvFilter(e.target.value)}
+                onChange={setEnvFilter}
+                options={[
+                  { value: 'dev', label: 'dev' },
+                  { value: 'prod', label: 'prod' },
+                ]}
+                placeholder="All environments"
                 aria-label="Filter by environment"
-              >
-                <option value="">All environments</option>
-                <option value="dev">dev</option>
-                <option value="prod">prod</option>
-              </select>
+              />
               <button type="button" className="primary" onClick={() => navigate('/validate')}>
                 New validation
               </button>

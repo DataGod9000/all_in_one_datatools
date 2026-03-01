@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { api, getApi } from '../api';
 import { useToast } from '../context/ToastContext';
+import { AppSelect } from '../components/AppSelect';
 import type { TableRow } from '../types';
 
 function tableId(t: TableRow) {
@@ -163,11 +164,17 @@ export default function Assets() {
         <div className="assets-toolbar">
           <div className="assets-toolbar-controls">
             <div className="assets-toolbar-row">
-              <select className="assets-env-select" value={env} onChange={(e) => setEnv(e.target.value)} aria-label="Filter by environment">
-                <option value="">All environments</option>
-                <option value="dev">dev</option>
-                <option value="prod">prod</option>
-              </select>
+              <AppSelect
+                className="assets-env-select"
+                value={env}
+                onChange={setEnv}
+                options={[
+                  { value: 'dev', label: 'dev' },
+                  { value: 'prod', label: 'prod' },
+                ]}
+                placeholder="All environments"
+                aria-label="Filter by environment"
+              />
               <input
                 type="text"
                 className="assets-search"
@@ -175,7 +182,7 @@ export default function Assets() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <button type="button" className="primary btn-create-table" onClick={() => navigate('/ddl')}>
+              <button type="button" className="primary btn-create-table" onClick={() => navigate('/create-table')}>
                 Create table
               </button>
             </div>

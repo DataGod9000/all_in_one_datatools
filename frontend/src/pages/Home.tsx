@@ -11,7 +11,7 @@ export default function Home() {
             <h3>Assets</h3>
             <p>View all tables created via this app. Create new tables or schedule a table for deletion (renamed, dropped in 7 days).</p>
           </Link>
-          <Link to="/ddl" className="feature-card">
+          <Link to="/create-table" className="feature-card">
             <h3>DDL</h3>
             <p>Parse CREATE TABLE statements and apply them to dev or prod. Schema and table registry updated automatically.</p>
           </Link>

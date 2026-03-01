@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { AppSelect } from '../components/AppSelect';
 import { useNavigate } from 'react-router-dom';
 import { getApi } from '../api';
 import type { TableRow } from '../types';
@@ -54,30 +55,31 @@ export default function Validate() {
               <p className="card-desc">Select environment and table, then run. Results appear on the Validation runs page.</p>
               <div className="compare-row">
                 <label>Environment schema</label>
-                <select value={schema} onChange={(e) => setSchema(e.target.value)}>
-                  <option value="dev">dev</option>
-                  <option value="prod">prod</option>
-                </select>
+                <AppSelect
+                  value={schema}
+                  onChange={setSchema}
+                  options={[
+                    { value: 'dev', label: 'dev' },
+                    { value: 'prod', label: 'prod' },
+                  ]}
+                />
               </div>
               <div className="compare-row">
                 <label>Target table</label>
-                <select
+                <AppSelect
                   value={selectedTable ? `${selectedTable.env_schema}.${selectedTable.table_name}` : ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const t = tables.find((x) => `${x.env_schema}.${x.table_name}` === val);
+                  onChange={(v) => {
+                    const t = tables.find((x) => `${x.env_schema}.${x.table_name}` === v);
                     setSelectedTable(t ?? null);
                   }}
+                  options={tables.map((t) => ({
+                    value: `${t.env_schema}.${t.table_name}`,
+                    label: t.table_name,
+                  }))}
+                  placeholder={tablesLoading ? 'Loading…' : 'Select a table'}
                   disabled={tablesLoading}
                   aria-label="Select table"
-                >
-                  <option value="">{tablesLoading ? 'Loading…' : 'Select a table'}</option>
-                  {tables.map((t) => (
-                    <option key={`${t.env_schema}.${t.table_name}`} value={`${t.env_schema}.${t.table_name}`}>
-                      {t.table_name}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="compare-actions">
                 <button

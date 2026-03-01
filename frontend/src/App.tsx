@@ -22,7 +22,7 @@ function App() {
               <Route path="/" element={<Layout />}>
                 <Route index element={<Home />} />
                 <Route path="assets" element={<Assets />} />
-                <Route path="ddl" element={<DDL />} />
+                <Route path="create-table" element={<DDL />} />
                 <Route path="compare" element={<Compare />} />
                 <Route path="compare/runs" element={<CompareRuns />} />
                 <Route path="validate" element={<Validate />} />

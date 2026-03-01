@@ -1587,7 +1587,7 @@ def assets_restore_backup(req: RestoreBackupRequest):
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 # SPA routes: serve index.html for client-side routing
-SPA_PATHS = frozenset({"/", "/assets", "/ddl", "/compare", "/validate", "/compare/runs", "/validate/runs", "/query"})
+SPA_PATHS = frozenset({"/", "/assets", "/create-table", "/compare", "/validate", "/compare/runs", "/validate/runs", "/query"})
 
 
 @app.post("/query/run")

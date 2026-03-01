@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // Exact SPA routes - only bypass proxy for these (not /assets/tables, /ddl/parse, etc.)
-const SPA_ROUTES = new Set(['/', '/assets', '/ddl', '/compare', '/validate', '/compare/runs', '/validate/runs', '/query'])
+const SPA_ROUTES = new Set(['/', '/assets', '/create-table', '/compare', '/validate', '/compare/runs', '/validate/runs', '/query'])
 
 function bypass(req: { method?: string; url?: string; headers?: { accept?: string } }) {
   if (req.method !== 'GET') return
@@ -27,7 +27,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/assets': { ...proxyTarget, bypass },
-      '/ddl': { ...proxyTarget, bypass },
+      '/create-table': { ...proxyTarget, bypass },
+      '/ddl': proxyTarget,  /* API routes: /ddl/parse, /ddl/apply, etc. */
       '/compare': { ...proxyTarget, bypass },
       '/validate': { ...proxyTarget, bypass },
       '/query': { ...proxyTarget, bypass },

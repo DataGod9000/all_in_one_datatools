@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { AppSelect } from '../components/AppSelect';
 import { useNavigate } from 'react-router-dom';
 import { api, getApi } from '../api';
 import { useToast } from '../context/ToastContext';
@@ -200,26 +201,27 @@ export default function Compare() {
           <div className="compare-two-cols">
             <div className="compare-col">
               <label>Left environment</label>
-              <select value={leftEnv} onChange={(e) => { setLeftEnv(e.target.value); setLeftTable(null); }}>
-                <option value="dev">dev</option>
-                <option value="prod">prod</option>
-              </select>
+              <AppSelect
+                value={leftEnv}
+                onChange={(v) => { setLeftEnv(v); setLeftTable(null); }}
+                options={[
+                  { value: 'dev', label: 'dev' },
+                  { value: 'prod', label: 'prod' },
+                ]}
+              />
               <label>Left table</label>
-              <select
+              <AppSelect
                 value={leftTable ? `${leftTable.env_schema}.${leftTable.table_name}` : ''}
-                onChange={(e) => {
-                  const v = e.target.value;
+                onChange={(v) => {
                   const t = leftTables.find((x) => `${x.env_schema}.${x.table_name}` === v);
                   setLeftTable(t || null);
                 }}
-              >
-                <option value="">— Select —</option>
-                {leftTables.map((t) => (
-                  <option key={`${t.env_schema}.${t.table_name}`} value={`${t.env_schema}.${t.table_name}`}>
-                    {t.table_name}
-                  </option>
-                ))}
-              </select>
+                options={leftTables.map((t) => ({
+                  value: `${t.env_schema}.${t.table_name}`,
+                  label: t.table_name,
+                }))}
+                placeholder="— Select —"
+              />
               <label>PT</label>
               <input
                 type="text"
@@ -230,26 +232,27 @@ export default function Compare() {
             </div>
             <div className="compare-col">
               <label>Right environment</label>
-              <select value={rightEnv} onChange={(e) => { setRightEnv(e.target.value); setRightTable(null); }}>
-                <option value="dev">dev</option>
-                <option value="prod">prod</option>
-              </select>
+              <AppSelect
+                value={rightEnv}
+                onChange={(v) => { setRightEnv(v); setRightTable(null); }}
+                options={[
+                  { value: 'dev', label: 'dev' },
+                  { value: 'prod', label: 'prod' },
+                ]}
+              />
               <label>Right table</label>
-              <select
+              <AppSelect
                 value={rightTable ? `${rightTable.env_schema}.${rightTable.table_name}` : ''}
-                onChange={(e) => {
-                  const v = e.target.value;
+                onChange={(v) => {
                   const t = rightTables.find((x) => `${x.env_schema}.${x.table_name}` === v);
                   setRightTable(t || null);
                 }}
-              >
-                <option value="">— Select —</option>
-                {rightTables.map((t) => (
-                  <option key={`${t.env_schema}.${t.table_name}`} value={`${t.env_schema}.${t.table_name}`}>
-                    {t.table_name}
-                  </option>
-                ))}
-              </select>
+                options={rightTables.map((t) => ({
+                  value: `${t.env_schema}.${t.table_name}`,
+                  label: t.table_name,
+                }))}
+                placeholder="— Select —"
+              />
               <label>PT</label>
               <input
                 type="text"
@@ -276,27 +279,19 @@ export default function Compare() {
                     <div className="compare-pairs">
                       {joinKeyPairs.map((pair, i) => (
                         <div key={i} className="compare-pair-row">
-                          <select
+                          <AppSelect
                             value={pair.left}
-                            onChange={(e) => updateJoinKeyPair(i, 'left', e.target.value)}
-                            className="compare-select"
-                          >
-                            <option value="">— Left —</option>
-                            {leftColumns.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => updateJoinKeyPair(i, 'left', v)}
+                            options={leftColumns.map((c) => ({ value: c, label: c }))}
+                            placeholder="— Left —"
+                          />
                           <span className="compare-pair-arrow">↔</span>
-                          <select
+                          <AppSelect
                             value={pair.right}
-                            onChange={(e) => updateJoinKeyPair(i, 'right', e.target.value)}
-                            className="compare-select"
-                          >
-                            <option value="">— Right —</option>
-                            {rightColumns.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => updateJoinKeyPair(i, 'right', v)}
+                            options={rightColumns.map((c) => ({ value: c, label: c }))}
+                            placeholder="— Right —"
+                          />
                           <button
                             type="button"
                             className="compare-remove-btn"
@@ -326,27 +321,19 @@ export default function Compare() {
                     <div className="compare-pairs">
                       {compareColumnPairs.map((pair, i) => (
                         <div key={i} className="compare-pair-row">
-                          <select
+                          <AppSelect
                             value={pair.left}
-                            onChange={(e) => updateCompareColumnPair(i, 'left', e.target.value)}
-                            className="compare-select"
-                          >
-                            <option value="">— Left —</option>
-                            {leftColumns.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => updateCompareColumnPair(i, 'left', v)}
+                            options={leftColumns.map((c) => ({ value: c, label: c }))}
+                            placeholder="— Left —"
+                          />
                           <span className="compare-pair-arrow">↔</span>
-                          <select
+                          <AppSelect
                             value={pair.right}
-                            onChange={(e) => updateCompareColumnPair(i, 'right', e.target.value)}
-                            className="compare-select"
-                          >
-                            <option value="">— Right —</option>
-                            {rightColumns.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => updateCompareColumnPair(i, 'right', v)}
+                            options={rightColumns.map((c) => ({ value: c, label: c }))}
+                            placeholder="— Right —"
+                          />
                           <button
                             type="button"
                             className="compare-remove-btn"
