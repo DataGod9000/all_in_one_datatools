@@ -13,6 +13,7 @@ import ValidateRuns from './pages/ValidateRuns';
 import Query from './pages/Query';
 import ApprovalCenter from './pages/ApprovalCenter';
 import RequestHistory from './pages/RequestHistory';
+import AnimationReference from './pages/AnimationReference';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
                 <Route path="query" element={<Query />} />
                 <Route path="approval-center" element={<ApprovalCenter />} />
                 <Route path="requests-history" element={<RequestHistory />} />
+                <Route path="animation-reference" element={<AnimationReference />} />
               </Route>
             </Routes>
             </BrowserRouter>

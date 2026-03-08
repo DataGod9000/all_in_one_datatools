@@ -1,0 +1,128 @@
+/* Professional / Corporate effect: subtle fast animations (200–300ms), precise spacing, clean slides */
+
+:root {
+  --transition-pro: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --content-bg: #f4f6f9;
+  --content-border: #e0e4eb;
+  --text-muted: #5a6170;
+}
+
+html.dark-mode {
+  --content-bg: #0c0e12;
+  --content-border: #252a33;
+  --text-muted: #9ca3af;
+}
+
+@keyframes proFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- View entrance on route change (use with key={pathname} wrapper) ---- */
+.view-animate-wrap .view {
+  animation: proFadeIn 0.28s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.view-animate-wrap .view .section h2,
+.view-animate-wrap #view-home .hero h1 {
+  animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.04s both;
+}
+
+.view-animate-wrap .view .section .subtitle,
+.view-animate-wrap #view-home .hero p {
+  animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.07s both;
+}
+
+.view-animate-wrap .view .section > .card,
+.view-animate-wrap .view .card:first-of-type {
+  animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.1s both;
+}
+
+.view-animate-wrap #view-home .feature-cards .feature-card:nth-child(1) { animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.08s both; }
+.view-animate-wrap #view-home .feature-cards .feature-card:nth-child(2) { animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.11s both; }
+.view-animate-wrap #view-home .feature-cards .feature-card:nth-child(3) { animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.14s both; }
+.view-animate-wrap #view-home .feature-cards .feature-card:nth-child(4) { animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.17s both; }
+.view-animate-wrap #view-home .feature-cards .feature-card:nth-child(5) { animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both; }
+.view-animate-wrap #view-home .feature-cards .feature-card:nth-child(6) { animation: proFadeIn 0.26s cubic-bezier(0.4, 0, 0.2, 1) 0.23s both; }
+
+/* ---- 250ms transitions site-wide ---- */
+.card {
+  transition: box-shadow var(--transition-pro), border-color var(--transition-pro);
+}
+
+.feature-card {
+  transition: border-color var(--transition-pro), transform var(--transition-pro), box-shadow var(--transition-pro);
+}
+
+.sidebar-nav a,
+.sidebar-nav .nav-link-button {
+  transition: background var(--transition-pro), color var(--transition-pro), border-color var(--transition-pro);
+}
+
+.logo-link {
+  transition: color var(--transition-pro);
+}
+
+.header-actions a,
+.theme-toggle {
+  transition: color var(--transition-pro), background var(--transition-pro), border-color var(--transition-pro);
+}
+
+.header-search {
+  transition: border-color var(--transition-pro), box-shadow var(--transition-pro);
+}
+
+.card input,
+.card select,
+.card textarea,
+.create-table-flow input,
+.create-table-flow select,
+.create-table-flow textarea,
+.panel input,
+.panel select,
+.panel textarea {
+  transition: border-color var(--transition-pro), box-shadow var(--transition-pro);
+}
+
+.card button.primary,
+.create-table-flow button.primary,
+.panel button.primary,
+.filter-tab,
+.card button:not(.primary),
+.panel button {
+  transition: background var(--transition-pro), transform var(--transition-pro), border-color var(--transition-pro), color var(--transition-pro);
+}
+
+/* ---- Precise spacing & data focus ---- */
+.section h2 {
+  letter-spacing: -0.025em;
+}
+
+.section .subtitle {
+  margin-bottom: 1.5rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 0.65rem 0.85rem;
+}
+
+.data-table th {
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.card {
+  padding: 1.5rem 1.75rem;
+}
+
+.feature-card {
+  padding: 1.35rem 1.5rem;
+}

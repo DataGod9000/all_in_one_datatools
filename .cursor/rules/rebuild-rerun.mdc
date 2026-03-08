@@ -1,0 +1,19 @@
+---
+description: After frontend/backend changes, rebuild and rerun so the user sees updates
+alwaysApply: true
+---
+
+# Rebuild and Rerun
+
+When you change frontend or backend code in this project:
+
+1. **Rebuild the frontend** so static assets are updated:
+   - Run: `cd frontend && npm run build` (from project root: `datatools-portfolio`)
+
+2. **Rerun the backend** so the app is served with the latest build:
+   - Run: `python main.py` from the project root (or `cd datatools-portfolio && python main.py`)
+   - Start it in the background so the user can keep working
+
+3. **Remind the user** to hard-refresh the browser (Cmd+Shift+R / Ctrl+Shift+R) to load new JS/CSS.
+
+When the user asks to "rebuild", "rerun", "rebuild and rerun", or "see my changes", run the build and start the backend as above, then confirm and give the refresh reminder.

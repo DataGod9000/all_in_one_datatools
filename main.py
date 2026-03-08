@@ -62,7 +62,6 @@ def ensure_deletion_schedule_table():
             conn.autocommit = True
             with conn.cursor() as cur:
                 cur.execute("CREATE SCHEMA IF NOT EXISTS datatools")
-                cur.execute("CREATE SCHEMA IF NOT EXISTS uat")
                 # Migrate compare_runs: add env_schema, compare_columns, status, error_message, left_env_schema, right_env_schema if missing
                 for col, typ in [
                     ("env_schema", "TEXT NOT NULL DEFAULT 'dev'"),
@@ -147,9 +146,9 @@ def ensure_deletion_schedule_table():
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-ALLOWED_SCHEMAS_STR = os.getenv("ALLOWED_SCHEMAS", "dev,uat,prod")
+ALLOWED_SCHEMAS_STR = os.getenv("ALLOWED_SCHEMAS", "dev,prod")
 ALLOWED_SCHEMAS = [s.strip() for s in ALLOWED_SCHEMAS_STR.split(",") if s.strip()]
-ENVS_DIRECT_CREATE = frozenset({"DEV", "UAT"})  # no approval; create immediately
+ENVS_DIRECT_CREATE = frozenset({"DEV"})  # no approval; create immediately
 ENVS_REQUIRE_APPROVAL = frozenset({"PROD"})
 
 IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -415,7 +414,7 @@ class RunQueryRequest(BaseModel):
 class TableRequestCreate(BaseModel):
     table_name: str = Field(..., min_length=1)
     sql_statement: str = Field("", description="Required for action=create; can be empty for delete/restore")
-    environment: str = Field(..., description="DEV, UAT, or PROD")
+    environment: str = Field(..., description="DEV or PROD")
     submitted_by: str = Field(..., min_length=1)
     column_comments: Optional[list[ColumnCommentInput]] = None
     action: str = Field("create", description="create, delete, or restore")
@@ -1729,11 +1728,11 @@ def _row_to_created_table(row: tuple) -> dict:
 
 @app.post("/api/table-requests")
 def api_create_table_request(req: TableRequestCreate):
-    """Create a table request. DEV/UAT: create table immediately (create only). PROD: create/delete/restore require approval."""
+    """Create a table request. DEV: create table immediately (create only). PROD: create/delete/restore require approval."""
     env_upper = (req.environment or "").strip().upper()
     action = (req.action or "create").strip().lower()
-    if env_upper not in ("DEV", "UAT", "PROD"):
-        raise HTTPException(status_code=400, detail="environment must be DEV, UAT, or PROD")
+    if env_upper not in ("DEV", "PROD"):
+        raise HTTPException(status_code=400, detail="environment must be DEV or PROD")
     if action not in ("create", "delete", "restore"):
         raise HTTPException(status_code=400, detail="action must be create, delete, or restore")
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { getApi } from '../api';
 
@@ -13,6 +13,7 @@ const LogoIcon = () => (
 
 export default function Layout() {
   const { toggle } = useTheme();
+  const location = useLocation();
   const [pendingCount, setPendingCount] = useState(0);
 
   const fetchPending = () => {
@@ -36,6 +37,12 @@ export default function Layout() {
 
   return (
     <div className="app-layout">
+      <div className="narrow-viewport-message" role="status" aria-live="polite">
+        <div className="narrow-viewport-message-inner">
+          <p className="narrow-viewport-title">This site isn’t built for small screens.</p>
+          <p className="narrow-viewport-body">I have a life outside of building apps. Widen your browser or use a laptop and we’re good.</p>
+        </div>
+      </div>
       <aside className="sidebar">
         <div className="sidebar-section">Tools</div>
         <nav className="sidebar-nav">
@@ -94,6 +101,9 @@ export default function Layout() {
           <a href={import.meta.env.DEV ? 'http://127.0.0.1:8000/docs' : '/docs'} className="nav-external" target="_blank" rel="noopener">
             API docs
           </a>
+          <NavLink to="/animation-reference" className={({ isActive }) => `nav-external-style ${isActive ? 'active' : ''}`}>
+            Animation reference
+          </NavLink>
         </nav>
       </aside>
       <header className="site-header">
@@ -116,7 +126,9 @@ export default function Layout() {
       </header>
       <div className="main-wrap">
         <main id="main-content" tabIndex={-1}>
-          <Outlet />
+          <div key={location.pathname} className="view-animate-wrap">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

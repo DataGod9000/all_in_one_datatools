@@ -1,6 +1,8 @@
 /* Electric Studio preset: Manrope (display + body), DM Mono (code/data) */
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
 @import './styles-extracted.css';
+@import './animation-patterns.css';
+@import './professional-corporate.css';
 
 /* React overrides - we use routing instead of .view display:none */
 .view {
@@ -8,3 +10,147 @@
   padding: 0 0 2rem;
 }
 .view.query-page { padding: 0; }
+
+/* Animation reference page */
+.animation-reference .animation-demos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 2rem;
+}
+.animation-reference .tilt-demo {
+  max-width: 320px;
+  padding: 1.5rem;
+  transition: transform 0.2s ease;
+}
+.animation-reference h3 { margin-top: 2rem; margin-bottom: 0.5rem; }
+.animation-reference h3:first-of-type { margin-top: 0; }
+
+/* Animation reference under External: same style as Supabase / API docs (no icon) */
+.sidebar-nav a.nav-external-style {
+  font-size: 0.85rem;
+  color: var(--sidebar-text-muted);
+}
+.sidebar-nav a.nav-external-style:hover {
+  color: var(--sidebar-text);
+  background: var(--sidebar-bg-hover);
+}
+.sidebar-nav a.nav-external-style.active {
+  background: transparent;
+  border-left-color: transparent;
+  color: var(--sidebar-text);
+}
+
+/* Revert to picture scheme: dark sidebar, vibrant blue accent, light content. Left nav single-tone. */
+:root {
+  --accent: #2f80ed;
+  --accent-hover: #2563eb;
+  --accent-glow: rgba(47, 128, 237, 0.25);
+  --purple: #2f80ed;
+  --purple-hover: #2563eb;
+  --content-bg: #f8f8f8;
+  --sidebar-bg: #121212;
+  --sidebar-bg-hover: #1a1a1a;
+  --sidebar-active-border: #2f80ed;
+  --sidebar-active-bg: #2b2e42;
+}
+.sidebar {
+  border-right: none;
+}
+.site-header {
+  background: #fff;
+  border-bottom: 1px solid var(--content-border);
+}
+.logo-link {
+  color: var(--text);
+}
+.logo-link:hover {
+  color: var(--accent);
+}
+.logo-link .logo-icon {
+  color: inherit;
+}
+.header-search {
+  background: var(--content-bg);
+  border-color: var(--content-border);
+  color: var(--text);
+}
+.header-search::placeholder {
+  color: var(--text-muted);
+}
+.header-actions a {
+  color: var(--text-muted);
+}
+.header-actions a:hover {
+  color: var(--text);
+  background: var(--content-bg);
+}
+.header-actions a.cta {
+  background: var(--accent);
+  color: #fff;
+}
+.header-actions a.cta:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
+.theme-toggle {
+  background: var(--content-bg);
+  border-color: var(--content-border);
+  color: var(--text-muted);
+}
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--content-border-light);
+}
+
+/* Dark mode */
+html.dark-mode {
+  --accent-glow: rgba(47, 128, 237, 0.35);
+}
+html.dark-mode .site-header {
+  background: var(--content-bg-card);
+  border-bottom-color: var(--content-border);
+}
+html.dark-mode .logo-link { color: var(--text); }
+html.dark-mode .logo-link:hover { color: var(--accent); }
+html.dark-mode .header-search,
+html.dark-mode .theme-toggle { background: var(--content-bg); border-color: var(--content-border); color: var(--text); }
+html.dark-mode .header-actions a { color: var(--text-muted); }
+html.dark-mode .header-actions a.cta { background: var(--accent); color: #fff; }
+
+/* Narrow viewport: show message instead of app (phone / small window) */
+.narrow-viewport-message {
+  display: none;
+}
+@media (max-width: 900px) {
+  .narrow-viewport-message {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: var(--content-bg);
+    color: var(--text);
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    text-align: center;
+  }
+  .narrow-viewport-message-inner {
+    max-width: 360px;
+  }
+  .narrow-viewport-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 0.75rem;
+    color: var(--text);
+  }
+  .narrow-viewport-body {
+    font-size: 1rem;
+    line-height: 1.6;
+    margin: 0;
+    color: var(--text-muted);
+  }
+}
+html.dark-mode .narrow-viewport-message {
+  background: var(--content-bg);
+}

@@ -1,0 +1,112 @@
+/* Animation Patterns Reference — easing, entrances, backgrounds, utilities */
+
+:root {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ---- Entrance animations (add .visible to parent to trigger) ---- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.6s var(--ease-out-expo), transform 0.6s var(--ease-out-expo);
+}
+.visible .reveal {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-scale {
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.6s, transform 0.6s var(--ease-out-expo);
+}
+.visible .reveal-scale {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.reveal-left {
+  opacity: 0;
+  transform: translateX(-50px);
+  transition: opacity 0.6s var(--ease-out-expo), transform 0.6s var(--ease-out-expo);
+}
+.visible .reveal-left {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.reveal-blur {
+  opacity: 0;
+  filter: blur(10px);
+  transition: opacity 0.8s, filter 0.8s var(--ease-out-expo);
+}
+.visible .reveal-blur {
+  opacity: 1;
+  filter: blur(0);
+}
+
+/* Stagger children (use .reveal-stagger on parent, .reveal on children) */
+.reveal-stagger .reveal { transition-delay: calc(var(--stagger-i, 0) * 0.08s); }
+
+/* ---- Background effects ---- */
+
+.gradient-bg {
+  background:
+    radial-gradient(ellipse at 20% 80%, rgba(67, 97, 238, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(0, 255, 200, 0.08) 0%, transparent 50%),
+    var(--content-bg);
+}
+
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+html.dark-mode .grid-bg {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+}
+
+/* Subtle noise overlay (optional; use on top of gradient-bg) */
+.noise-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+/* ---- Effect-to-feeling: neon glow (techy) ---- */
+.neon-glow {
+  box-shadow: 0 0 20px var(--accent-glow), 0 0 40px rgba(67, 97, 238, 0.15);
+}
+
+/* ---- Performance ---- */
+.reveal,
+.reveal-scale,
+.reveal-left,
+.reveal-blur {
+  will-change: opacity, transform;
+}
+.visible .reveal,
+.visible .reveal-scale,
+.visible .reveal-left,
+.visible .reveal-blur {
+  will-change: auto;
+}
+
+@media (max-width: 768px) {
+  .reveal,
+  .reveal-scale,
+  .reveal-left,
+  .reveal-blur {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+}

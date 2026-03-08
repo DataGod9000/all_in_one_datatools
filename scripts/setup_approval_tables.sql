@@ -3,7 +3,7 @@
 
 CREATE SCHEMA IF NOT EXISTS datatools;
 
--- Requests for table creation (PROD goes here first; DEV/UAT can be recorded too)
+-- Requests for table creation (PROD goes here first; DEV can be recorded too)
 CREATE TABLE IF NOT EXISTS datatools.table_requests (
   id BIGSERIAL PRIMARY KEY,
   table_name TEXT NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS datatools.table_requests (
   rejection_reason TEXT
 );
 
--- Tables that were actually created (direct DEV/UAT or after PROD approval)
+-- Tables that were actually created (direct DEV or after PROD approval)
 CREATE TABLE IF NOT EXISTS datatools.created_tables (
   id BIGSERIAL PRIMARY KEY,
   table_name TEXT NOT NULL,
@@ -27,5 +27,3 @@ CREATE TABLE IF NOT EXISTS datatools.created_tables (
   creation_source TEXT NOT NULL
 );
 
--- Optional: ensure uat schema exists for direct UAT creates
-CREATE SCHEMA IF NOT EXISTS uat;

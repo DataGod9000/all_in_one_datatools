@@ -43,7 +43,7 @@ interface ColumnRow {
 export default function DDL() {
   const toast = useToast();
   const [ddl, setDdl] = useState('');
-  const [env, setEnv] = useState<'dev' | 'uat' | 'prod'>('dev');
+  const [env, setEnv] = useState<'dev' | 'prod'>('dev');
   const [layer, setLayer] = useState('ods');
   const [domain, setDomain] = useState('growth');
   const [core, setCore] = useState('');
@@ -251,10 +251,9 @@ export default function DDL() {
               <label>Environment</label>
               <AppSelect
                 value={env}
-                onChange={(v) => setEnv(v as 'dev' | 'uat' | 'prod')}
+                onChange={(v) => setEnv(v as 'dev' | 'prod')}
                 options={[
                   { value: 'dev', label: 'DEV' },
-                  { value: 'uat', label: 'UAT' },
                   { value: 'prod', label: 'PROD' },
                 ]}
               />
