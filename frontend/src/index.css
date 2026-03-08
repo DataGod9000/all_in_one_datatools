@@ -26,6 +26,71 @@
 .animation-reference h3 { margin-top: 2rem; margin-bottom: 0.5rem; }
 .animation-reference h3:first-of-type { margin-top: 0; }
 
+/* Create table: Suggest name with AI beside dropdown row, aligned */
+.tn-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.tn-row .table-name-parts {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+}
+.tn-suggest-btn {
+  flex-shrink: 0;
+  height: 2.5rem;
+  padding: 0 1rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.tn-segment {
+  height: 2.5rem;
+  min-height: 2.5rem;
+  max-height: 2.5rem;
+  flex-shrink: 0;
+  align-items: stretch;
+  box-sizing: border-box;
+}
+.tn-segment-input {
+  flex: 1;
+  min-width: 140px;
+  max-width: 220px;
+}
+.tn-segment input {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.tn-segment .tn-select-wrap {
+  height: 100%;
+  display: flex;
+}
+.tn-segment .tn-select-trigger {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.tn-segment input,
+.tn-segment .tn-select-trigger,
+.tn-segment .tn-select-value {
+  line-height: 1.5;
+  font-size: 0.875rem;
+}
+.tn-connector {
+  height: 2.5rem;
+  min-height: 2.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 /* Animation reference under External: same style as Supabase / API docs (no icon) */
 .sidebar-nav a.nav-external-style {
   font-size: 0.85rem;

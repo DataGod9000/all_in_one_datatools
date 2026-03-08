@@ -11,14 +11,13 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [dark, setDark] = useState(() => {
-    if (typeof window === 'undefined') return false;
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
     try {
-      return localStorage.getItem(KEY) === 'dark';
-    } catch {
-      return false;
-    }
-  });
+      const stored = localStorage.getItem(KEY);
+      if (stored === 'dark') setDark(true);
+    } catch {}
+  }, []);
   useEffect(() => {
     document.documentElement.classList.toggle('dark-mode', dark);
     try {

@@ -267,49 +267,52 @@ export default function DDL() {
                   <span className="table-name-builder-label">Table Name</span>
                   <span className="tn-pattern-hint">layer · josephco · domain · core · granularity</span>
                 </div>
-                <div className="table-name-parts">
-                  <div className="tn-segment tn-segment-select tn-segment-dropdown">
-                    <TnSelect
-                      id="tn-layer"
-                      value={layer}
-                      onChange={setLayer}
-                      options={[
-                        { value: 'ods', label: 'ODS · Source' },
-                        { value: 'dws', label: 'DWS · Summary' },
-                        { value: 'dim', label: 'DIM · Dimension' },
-                        { value: 'ads', label: 'ADS · Output' },
-                        { value: 'dwd', label: 'DWD · Detail' },
-                      ]}
-                    />
+                <div className="tn-row">
+                  <div className="table-name-parts">
+                    <div className="tn-segment tn-segment-select tn-segment-dropdown">
+                      <TnSelect
+                        id="tn-layer"
+                        value={layer}
+                        onChange={setLayer}
+                        options={[
+                          { value: 'ods', label: 'ODS · Source' },
+                          { value: 'dws', label: 'DWS · Summary' },
+                          { value: 'dim', label: 'DIM · Dimension' },
+                          { value: 'ads', label: 'ADS · Output' },
+                          { value: 'dwd', label: 'DWD · Detail' },
+                        ]}
+                      />
+                    </div>
+                    <span className="tn-connector">josephco</span>
+                    <div className="tn-segment tn-segment-select tn-segment-dropdown">
+                      <TnSelect
+                        id="tn-domain"
+                        value={domain}
+                        onChange={setDomain}
+                        options={[
+                          { value: 'trade', label: 'trade' },
+                          { value: 'growth', label: 'growth' },
+                        ]}
+                      />
+                    </div>
+                    <div className="tn-segment tn-segment-input">
+                      <input type="text" id="tn-core" value={core} onChange={(e) => handleCoreChange(e.target.value)} placeholder="table_name" />
+                    </div>
+                    <div className="tn-segment tn-segment-select tn-segment-dropdown">
+                      <TnSelect
+                        id="tn-granularity"
+                        value={granularity}
+                        onChange={setGranularity}
+                        options={[
+                          { value: 'di', label: 'DI · Daily Inc.' },
+                          { value: 'df', label: 'DF · Daily Full' },
+                          { value: 'hi', label: 'HI · Hourly Inc.' },
+                          { value: 'hf', label: 'HF · Hourly Full' },
+                        ]}
+                      />
+                    </div>
                   </div>
-                  <span className="tn-connector">josephco</span>
-                  <div className="tn-segment tn-segment-select tn-segment-dropdown">
-                    <TnSelect
-                      id="tn-domain"
-                      value={domain}
-                      onChange={setDomain}
-                      options={[
-                        { value: 'trade', label: 'trade' },
-                        { value: 'growth', label: 'growth' },
-                      ]}
-                    />
-                  </div>
-                  <div className="tn-segment tn-segment-input">
-                    <input type="text" id="tn-core" value={core} onChange={(e) => handleCoreChange(e.target.value)} placeholder="table_name" />
-                  </div>
-                  <div className="tn-segment tn-segment-select tn-segment-dropdown">
-                    <TnSelect
-                      id="tn-granularity"
-                      value={granularity}
-                      onChange={setGranularity}
-                      options={[
-                        { value: 'di', label: 'DI · Daily Inc.' },
-                        { value: 'df', label: 'DF · Daily Full' },
-                        { value: 'hi', label: 'HI · Hourly Inc.' },
-                        { value: 'hf', label: 'HF · Hourly Full' },
-                      ]}
-                    />
-                  </div>
+                  <button type="button" className="primary tn-suggest-btn" onClick={handleSuggestName}>Suggest name with AI</button>
                 </div>
                 <div className="table-name-preview">
                   <span className="tn-preview-label">Full name</span>
@@ -360,7 +363,6 @@ export default function DDL() {
               </div>
               <p className="comment-governance">Data governance: every column must have both English and Chinese comments.</p>
               <div className="row-inline btn-row">
-                <button type="button" className="primary" onClick={handleSuggestName}>Suggest name with AI</button>
                 <button type="button" className="primary" onClick={handleSuggestComments}>Generate comments with AI</button>
                 <button type="button" className="primary btn-create-table" onClick={handleCreate}>Create table</button>
               </div>
