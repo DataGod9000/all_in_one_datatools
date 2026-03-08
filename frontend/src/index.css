@@ -41,7 +41,7 @@
   color: var(--sidebar-text);
 }
 
-/* Revert to picture scheme: dark sidebar, vibrant blue accent, light content. Left nav single-tone. */
+/* Picture scheme: dark sidebar, blue accent for text/links. Light mode only: button backgrounds = left nav black. */
 :root {
   --accent: #2f80ed;
   --accent-hover: #2563eb;
@@ -53,6 +53,12 @@
   --sidebar-bg-hover: #1a1a1a;
   --sidebar-active-border: #2f80ed;
   --sidebar-active-bg: #2b2e42;
+  --button-bg: #121212;
+  --button-bg-hover: #1a1a1a;
+}
+html.dark-mode {
+  --button-bg: var(--accent);
+  --button-bg-hover: var(--accent-hover);
 }
 .sidebar {
   border-right: none;
@@ -86,11 +92,39 @@
   background: var(--content-bg);
 }
 .header-actions a.cta {
-  background: var(--accent);
+  background: var(--button-bg);
   color: #fff;
 }
 .header-actions a.cta:hover {
-  background: var(--accent-hover);
+  background: var(--button-bg-hover);
+  color: #fff;
+}
+/* Light mode: all blue buttons (not words) use same black as left nav */
+.card button.primary,
+.create-table-flow button.primary,
+.panel button.primary,
+.filter-tab.active,
+.modal-btn.primary,
+.approval-request-card-actions .primary,
+.query-run-btn,
+.query-new-btn,
+.assets-toolbar-row button.primary {
+  background: var(--button-bg) !important;
+  color: #fff;
+}
+.card button.primary:hover,
+.create-table-flow button.primary:hover,
+.panel button.primary:hover,
+.modal-btn.primary:hover,
+.approval-request-card-actions .primary:hover,
+.query-run-btn:hover,
+.query-new-btn:hover,
+.assets-toolbar-row button.primary:hover {
+  background: var(--button-bg-hover) !important;
+  color: #fff;
+}
+.filter-tab.active:hover {
+  background: var(--button-bg-hover) !important;
   color: #fff;
 }
 .theme-toggle {
