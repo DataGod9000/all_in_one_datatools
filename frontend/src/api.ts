@@ -29,3 +29,19 @@ export async function getApi(path: string): Promise<{ ok: boolean; json: any }> 
   }
   return { ok: res.ok, json };
 }
+
+export async function patchApi(path: string, body?: object): Promise<{ ok: boolean; json: any }> {
+  const res = await fetch(API_BASE + path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let json: any;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = { detail: text || res.statusText };
+  }
+  return { ok: res.ok, json };
+}

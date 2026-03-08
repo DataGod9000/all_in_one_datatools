@@ -62,6 +62,7 @@ def ensure_deletion_schedule_table():
             conn.autocommit = True
             with conn.cursor() as cur:
                 cur.execute("CREATE SCHEMA IF NOT EXISTS datatools")
+                cur.execute("CREATE SCHEMA IF NOT EXISTS uat")
                 # Migrate compare_runs: add env_schema, compare_columns, status, error_message, left_env_schema, right_env_schema if missing
                 for col, typ in [
                     ("env_schema", "TEXT NOT NULL DEFAULT 'dev'"),
@@ -104,13 +105,52 @@ def ensure_deletion_schedule_table():
                     )
                     """
                 )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS datatools.table_requests (
+                        id BIGSERIAL PRIMARY KEY,
+                        table_name TEXT NOT NULL,
+                        sql_statement TEXT NOT NULL,
+                        environment TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending_approval',
+                        submitted_by TEXT NOT NULL,
+                        submitted_at TIMESTAMPTZ DEFAULT NOW(),
+                        approved_by TEXT,
+                        approved_at TIMESTAMPTZ,
+                        rejection_reason TEXT
+                    )
+                    """
+                )
+                for col, typ in [
+                    ("approved_by_team_lead", "TEXT"),
+                    ("approved_at_team_lead", "TIMESTAMPTZ"),
+                    ("action", "TEXT NOT NULL DEFAULT 'create'"),
+                ]:
+                    try:
+                        cur.execute(f"ALTER TABLE datatools.table_requests ADD COLUMN IF NOT EXISTS {col} {typ}")
+                    except Exception:
+                        pass
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS datatools.created_tables (
+                        id BIGSERIAL PRIMARY KEY,
+                        table_name TEXT NOT NULL,
+                        sql_statement TEXT NOT NULL,
+                        environment TEXT NOT NULL,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        creation_source TEXT NOT NULL
+                    )
+                    """
+                )
     except Exception:
         pass
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-ALLOWED_SCHEMAS_STR = os.getenv("ALLOWED_SCHEMAS", "dev,prod")
+ALLOWED_SCHEMAS_STR = os.getenv("ALLOWED_SCHEMAS", "dev,uat,prod")
 ALLOWED_SCHEMAS = [s.strip() for s in ALLOWED_SCHEMAS_STR.split(",") if s.strip()]
+ENVS_DIRECT_CREATE = frozenset({"DEV", "UAT"})  # no approval; create immediately
+ENVS_REQUIRE_APPROVAL = frozenset({"PROD"})
 
 IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 DDL_FORBIDDEN = re.compile(
@@ -370,6 +410,24 @@ class RestoreBackupRequest(BaseModel):
 
 class RunQueryRequest(BaseModel):
     sql: str = Field(..., min_length=1, description="Single SELECT statement only")
+
+
+class TableRequestCreate(BaseModel):
+    table_name: str = Field(..., min_length=1)
+    sql_statement: str = Field("", description="Required for action=create; can be empty for delete/restore")
+    environment: str = Field(..., description="DEV, UAT, or PROD")
+    submitted_by: str = Field(..., min_length=1)
+    column_comments: Optional[list[ColumnCommentInput]] = None
+    action: str = Field("create", description="create, delete, or restore")
+
+
+class TableRequestApprove(BaseModel):
+    approved_by: str = Field(..., min_length=1)
+    step: Optional[str] = Field(None, description="team_lead or governance for two-step approval")
+
+
+class TableRequestReject(BaseModel):
+    rejection_reason: Optional[str] = None
 
 
 # ---------- Endpoints ----------
@@ -1297,13 +1355,20 @@ def assets_list_tables(
                             (sch,),
                         )
                         for r in cur.fetchall():
+                            table_name = r[1]
+                            created_at = None
+                            m = re.match(r"^back_up_.+_(\d{8})$", table_name)
+                            if m:
+                                d = m.group(1)
+                                created_at = f"{d[:4]}-{d[4:6]}-{d[6:8]}T00:00:00Z"
                             out.append({
                                 "env_schema": r[0],
-                                "table_name": r[1],
+                                "table_name": table_name,
                                 "type": "backup",
                                 "status": "Backup",
-                                "created_at": None,
+                                "created_at": created_at,
                             })
+                    out.sort(key=lambda t: t.get("created_at") or "\uffff")
                 else:
                     placeholders = ",".join("%s" for _ in schemas)
                     cur.execute(
@@ -1587,7 +1652,10 @@ def assets_restore_backup(req: RestoreBackupRequest):
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 # SPA routes: serve index.html for client-side routing
-SPA_PATHS = frozenset({"/", "/assets", "/create-table", "/compare", "/validate", "/compare/runs", "/validate/runs", "/query"})
+SPA_PATHS = frozenset({
+    "/", "/assets", "/create-table", "/compare", "/validate", "/compare/runs", "/validate/runs", "/query",
+    "/approval-center", "/requests-history",
+})
 
 
 @app.post("/query/run")
@@ -1623,6 +1691,415 @@ def query_run(req: RunQueryRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Query failed: {e!s}") from e
+
+
+# ---------- Approval workflow: table requests & created tables ----------
+
+
+def _row_to_table_request(row: tuple) -> dict:
+    d = {
+        "id": row[0],
+        "table_name": row[1],
+        "sql_statement": row[2],
+        "environment": row[3],
+        "status": row[4],
+        "submitted_by": row[5],
+        "submitted_at": row[6].isoformat() if row[6] else None,
+        "approved_by": row[7],
+        "approved_at": row[8].isoformat() if row[8] else None,
+        "rejection_reason": row[9],
+    }
+    if len(row) > 10:
+        d["approved_by_team_lead"] = row[10]
+        d["approved_at_team_lead"] = row[11].isoformat() if row[11] else None
+    d["action"] = (row[12] or "create") if len(row) > 12 else "create"
+    return d
+
+
+def _row_to_created_table(row: tuple) -> dict:
+    return {
+        "id": row[0],
+        "table_name": row[1],
+        "sql_statement": row[2],
+        "environment": row[3],
+        "created_at": row[4].isoformat() if row[4] else None,
+        "creation_source": row[5],
+    }
+
+
+@app.post("/api/table-requests")
+def api_create_table_request(req: TableRequestCreate):
+    """Create a table request. DEV/UAT: create table immediately (create only). PROD: create/delete/restore require approval."""
+    env_upper = (req.environment or "").strip().upper()
+    action = (req.action or "create").strip().lower()
+    if env_upper not in ("DEV", "UAT", "PROD"):
+        raise HTTPException(status_code=400, detail="environment must be DEV, UAT, or PROD")
+    if action not in ("create", "delete", "restore"):
+        raise HTTPException(status_code=400, detail="action must be create, delete, or restore")
+
+    # Delete or restore: only PROD, always create approval request
+    if action in ("delete", "restore"):
+        if env_upper != "PROD":
+            raise HTTPException(status_code=400, detail="Delete and restore approval only apply to PROD")
+        validate_table_name(req.table_name.strip())
+        if action == "restore" and not re.match(r"^back_up_.+_\d{8}$", req.table_name.strip()):
+            raise HTTPException(status_code=400, detail="Restore table_name must be back_up_<name>_YYYYMMDD")
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO datatools.table_requests (table_name, sql_statement, environment, status, submitted_by, action)
+                        VALUES (%s, %s, %s, 'pending_approval', %s, %s)
+                        RETURNING id, table_name, sql_statement, environment, status, submitted_by, submitted_at, approved_by, approved_at, rejection_reason, approved_by_team_lead, approved_at_team_lead, action
+                        """,
+                        (req.table_name.strip(), req.sql_statement or "", env_upper, req.submitted_by.strip(), action),
+                    )
+                    row = cur.fetchone()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database error: {e!s}") from e
+        return {
+            "created": False,
+            "request_id": row[0],
+            "message": f"PROD {action} request submitted for approval.",
+            "request": _row_to_table_request(row),
+        }
+
+    if env_upper in ENVS_DIRECT_CREATE:
+        # Create table immediately via ddl_apply, then record in created_tables
+        env_schema = req.environment.strip().lower()
+        validate_env_schema(env_schema)
+        if DDL_FORBIDDEN.search(req.sql_statement):
+            raise HTTPException(
+                status_code=400,
+                detail="DDL must not contain DROP, ALTER, TRUNCATE, COPY, GRANT, REVOKE",
+            )
+        try:
+            parsed = parse_create_table(req.sql_statement)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        table_name = parsed.get("table") or ""
+        if not validate_identifier(table_name):
+            raise HTTPException(status_code=400, detail=f"Invalid table name: {table_name}")
+        validate_table_name_governance(table_name)
+        columns = parsed.get("columns") or []
+        comments_by_col = {c.column_name.strip(): c for c in (req.column_comments or []) if c.column_name}
+        missing = []
+        for col in columns:
+            cname = col.get("name", "")
+            cc = comments_by_col.get(cname)
+            if not cc or not (cc.comment_en and cc.comment_en.strip()) or not (cc.comment_zh and cc.comment_zh.strip()):
+                missing.append(cname)
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Data governance: each column must have both English and Chinese comments. Missing for: {missing}.",
+            )
+        applied_sql = build_create_table_sql(env_schema, table_name, parsed)
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(applied_sql)
+                for col in columns:
+                    cname = col.get("name", "")
+                    cc = comments_by_col.get(cname)
+                    if cc and cc.comment_en and cc.comment_zh:
+                        combined = f"EN: {cc.comment_en.strip()} | ZH: {cc.comment_zh.strip()}"
+                        combined_escaped = combined.replace("'", "''")
+                        comment_sql = f'COMMENT ON COLUMN "{env_schema}"."{table_name}"."{cname}" IS \'{combined_escaped}\''
+                        with conn.cursor() as c2:
+                            c2.execute(comment_sql)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO datatools.table_registry (env_schema, table_name, ddl, parsed_json)
+                        VALUES (%s, %s, %s, %s::jsonb)
+                        ON CONFLICT (env_schema, table_name)
+                        DO UPDATE SET ddl = EXCLUDED.ddl, parsed_json = EXCLUDED.parsed_json
+                        """,
+                        (env_schema, table_name, req.sql_statement, json.dumps(parsed)),
+                    )
+                audit_log(conn, "ddl_apply", env_schema, {"env_schema": env_schema, "table": table_name, "applied_sql": applied_sql})
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO datatools.created_tables (table_name, sql_statement, environment, creation_source)
+                        VALUES (%s, %s, %s, 'Direct Create')
+                        RETURNING id, table_name, sql_statement, environment, created_at, creation_source
+                        """,
+                        (table_name, req.sql_statement, env_upper,),
+                    )
+                    row = cur.fetchone()
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database error: {e!s}") from e
+        return {
+            "created": True,
+            "created_table_id": row[0],
+            "message": f"Table {table_name} created in {env_upper}.",
+        }
+
+    # PROD create: validate DDL/table name but do not execute; create approval request only
+    if not (req.sql_statement and req.sql_statement.strip()):
+        raise HTTPException(status_code=400, detail="sql_statement required for create request")
+    if DDL_FORBIDDEN.search(req.sql_statement):
+        raise HTTPException(
+            status_code=400,
+            detail="DDL must not contain DROP, ALTER, TRUNCATE, COPY, GRANT, REVOKE",
+        )
+    try:
+        parsed = parse_create_table(req.sql_statement)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    table_name = parsed.get("table") or req.table_name.strip()
+    if not validate_identifier(table_name):
+        raise HTTPException(status_code=400, detail=f"Invalid table name: {table_name}")
+    validate_table_name_governance(table_name)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO datatools.table_requests (table_name, sql_statement, environment, status, submitted_by, action)
+                    VALUES (%s, %s, %s, 'pending_approval', %s, 'create')
+                    RETURNING id, table_name, sql_statement, environment, status, submitted_by, submitted_at, approved_by, approved_at, rejection_reason, approved_by_team_lead, approved_at_team_lead, action
+                    """,
+                    (table_name, req.sql_statement, env_upper, req.submitted_by.strip()),
+                )
+                row = cur.fetchone()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e!s}") from e
+    return {
+        "created": False,
+        "request_id": row[0],
+        "message": "PROD table creation requires approval. Request submitted.",
+        "request": _row_to_table_request(row),
+    }
+
+
+_TABLE_REQUESTS_COLS = "id, table_name, sql_statement, environment, status, submitted_by, submitted_at, approved_by, approved_at, rejection_reason, approved_by_team_lead, approved_at_team_lead, action"
+
+
+@app.get("/api/table-requests")
+def api_list_table_requests(status: Optional[str] = Query(None, description="Filter by status: pending_approval, pending_governance, approved, rejected")):
+    """List table requests. status=pending_approval also returns pending_governance."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                if status == "pending_approval":
+                    cur.execute(
+                        f"""
+                        SELECT {_TABLE_REQUESTS_COLS}
+                        FROM datatools.table_requests
+                        WHERE status IN ('pending_approval', 'pending_governance')
+                        ORDER BY submitted_at DESC
+                        """
+                    )
+                elif status:
+                    cur.execute(
+                        f"""
+                        SELECT {_TABLE_REQUESTS_COLS}
+                        FROM datatools.table_requests WHERE status = %s ORDER BY submitted_at DESC
+                        """,
+                        (status,),
+                    )
+                else:
+                    cur.execute(
+                        f"""
+                        SELECT {_TABLE_REQUESTS_COLS}
+                        FROM datatools.table_requests ORDER BY submitted_at DESC
+                        """
+                    )
+                rows = cur.fetchall()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e!s}") from e
+    return {"requests": [_row_to_table_request(r) for r in rows]}
+
+
+@app.patch("/api/table-requests/{request_id}/approve")
+def api_approve_table_request(request_id: int, body: TableRequestApprove):
+    """Approve a PROD table request. Step team_lead: pending_approval -> pending_governance. Step governance: pending_governance -> approved and create table."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, table_name, sql_statement, environment, status, COALESCE(action, 'create') FROM datatools.table_requests WHERE id = %s",
+                    (request_id,),
+                )
+                row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Request not found")
+            rid, table_name, sql_statement, environment, status, action = row
+            env_schema = (environment or "prod").lower()
+            step = (body.step or "").strip().lower() or None
+            now = datetime.now(timezone.utc)
+            approved_by = body.approved_by.strip()
+
+            if step == "team_lead":
+                if status != "pending_approval":
+                    raise HTTPException(status_code=400, detail=f"Request already {status}")
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE datatools.table_requests
+                           SET status = 'pending_governance', approved_by_team_lead = %s, approved_at_team_lead = %s
+                           WHERE id = %s""",
+                        (approved_by, now, request_id),
+                    )
+                return {"status": "pending_governance", "message": "Team Lead approved. Waiting for Data Governance."}
+            if step == "governance":
+                if status != "pending_governance":
+                    raise HTTPException(status_code=400, detail=f"Request is {status}, expected pending_governance")
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE datatools.table_requests SET status = 'approved', approved_by = %s, approved_at = %s WHERE id = %s",
+                        (approved_by, now, request_id),
+                    )
+                if action == "delete":
+                    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+                    backup_name = f"back_up_{table_name}_{date_str}"
+                    renamed = f"to_be_deleted_{table_name}"
+                    delete_after = datetime.now(timezone.utc) + timedelta(days=7)
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f'CREATE TABLE "{env_schema}"."{backup_name}" AS SELECT * FROM "{env_schema}"."{table_name}"',
+                        )
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f'ALTER TABLE "{env_schema}"."{table_name}" RENAME TO "{renamed}"',
+                        )
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO datatools.deletion_schedule (env_schema, original_table_name, renamed_table_name, delete_after)
+                            VALUES (%s, %s, %s, %s)
+                            """,
+                            (env_schema, table_name, renamed, delete_after),
+                        )
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "DELETE FROM datatools.table_registry WHERE env_schema = %s AND table_name = %s",
+                            (env_schema, table_name),
+                        )
+                    audit_log(conn, "schedule_delete", env_schema, {
+                        "env_schema": env_schema, "table_name": table_name,
+                        "backup_name": backup_name, "renamed_to": renamed,
+                        "delete_after": delete_after.isoformat(), "via_approval": True,
+                    })
+                    return {"status": "approved", "message": "Table delete in PROD executed after approval."}
+                if action == "restore":
+                    m = re.match(r"^back_up_(.+)_\d{8}$", table_name)
+                    if not m:
+                        raise HTTPException(status_code=400, detail=f"Invalid backup table name: {table_name}")
+                    original_name = m.group(1)
+                    to_be_deleted_name = f"to_be_deleted_{original_name}"
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f'DROP TABLE IF EXISTS "{env_schema}"."{to_be_deleted_name}"',
+                        )
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f'ALTER TABLE "{env_schema}"."{table_name}" RENAME TO "{original_name}"',
+                        )
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "DELETE FROM datatools.deletion_schedule WHERE env_schema = %s AND renamed_table_name = %s",
+                            (env_schema, to_be_deleted_name),
+                        )
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO datatools.table_registry (env_schema, table_name, ddl, parsed_json)
+                            VALUES (%s, %s, %s, %s::jsonb)
+                            ON CONFLICT (env_schema, table_name) DO UPDATE SET ddl = EXCLUDED.ddl, parsed_json = EXCLUDED.parsed_json
+                            """,
+                            (env_schema, original_name, "", "{}"),
+                        )
+                    audit_log(conn, "restore_backup", env_schema, {
+                        "env_schema": env_schema, "backup_table": table_name,
+                        "restored_as": original_name, "via_approval": True,
+                    })
+                    return {"status": "approved", "message": "Table restore in PROD executed after approval."}
+                # action == 'create'
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO datatools.created_tables (table_name, sql_statement, environment, creation_source)
+                        VALUES (%s, %s, %s, 'Approved Request')
+                        RETURNING id
+                        """,
+                        (table_name, sql_statement or "", environment,),
+                    )
+                return {"status": "approved", "message": "Table created in PROD after approval."}
+
+            # Backward compat: no step = single-step approve (pending_approval -> approved); only for create
+            if status != "pending_approval":
+                raise HTTPException(status_code=400, detail=f"Request already {status}. Use step=team_lead or step=governance.")
+            if action not in ("create", None):
+                raise HTTPException(status_code=400, detail="Delete/restore requests require step=team_lead then step=governance.")
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE datatools.table_requests SET status = 'approved', approved_by = %s, approved_at = %s WHERE id = %s",
+                    (approved_by, now, request_id),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO datatools.created_tables (table_name, sql_statement, environment, creation_source)
+                    VALUES (%s, %s, %s, 'Approved Request')
+                    RETURNING id
+                    """,
+                    (table_name, sql_statement or "", environment,),
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e!s}") from e
+    return {"status": "approved", "message": "Table created in PROD after approval."}
+
+
+@app.patch("/api/table-requests/{request_id}/reject")
+def api_reject_table_request(request_id: int, body: TableRequestReject):
+    """Reject a PROD table request."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, status FROM datatools.table_requests WHERE id = %s",
+                    (request_id,),
+                )
+                row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Request not found")
+            if row[1] not in ("pending_approval", "pending_governance"):
+                raise HTTPException(status_code=400, detail=f"Request already {row[1]}")
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE datatools.table_requests SET status = 'rejected', rejection_reason = %s WHERE id = %s",
+                    (body.rejection_reason or None, request_id),
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e!s}") from e
+    return {"status": "rejected", "message": "Request rejected."}
+
+
+@app.get("/api/created-tables")
+def api_list_created_tables():
+    """List all created tables (direct or after approval)."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, table_name, sql_statement, environment, created_at, creation_source
+                    FROM datatools.created_tables ORDER BY created_at DESC
+                    """
+                )
+                rows = cur.fetchall()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e!s}") from e
+    return {"tables": [_row_to_created_table(r) for r in rows]}
 
 
 @app.get("/{full_path:path}")

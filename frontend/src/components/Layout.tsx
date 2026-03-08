@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { getApi } from '../api';
 
 const LogoIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -11,6 +13,26 @@ const LogoIcon = () => (
 
 export default function Layout() {
   const { toggle } = useTheme();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const fetchPending = () => {
+    getApi('/api/table-requests?status=pending_approval').then((res) => {
+      if (res.ok && Array.isArray(res.json?.requests)) {
+        setPendingCount(res.json.requests.length);
+      }
+    });
+  };
+
+  useEffect(() => {
+    fetchPending();
+    const t = setInterval(fetchPending, 15000);
+    const onUpdate = () => fetchPending();
+    window.addEventListener('approval-updated', onUpdate);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('approval-updated', onUpdate);
+    };
+  }, []);
 
   return (
     <div className="app-layout">
@@ -44,6 +66,20 @@ export default function Layout() {
           <NavLink to="/validate/runs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <span className="nav-icon">◫</span>
             <span>Validation runs</span>
+          </NavLink>
+        </nav>
+        <div className="sidebar-section">Workflow</div>
+        <nav className="sidebar-nav">
+          <NavLink to="/approval-center" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <span className="nav-icon">◇</span>
+            <span>Approval Center</span>
+            {pendingCount > 0 && (
+              <span className="nav-badge" aria-label={`${pendingCount} pending`}>{pendingCount}</span>
+            )}
+          </NavLink>
+          <NavLink to="/requests-history" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <span className="nav-icon">▤</span>
+            <span>Request History</span>
           </NavLink>
           <NavLink to="/query" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <span className="nav-icon">⎘</span>

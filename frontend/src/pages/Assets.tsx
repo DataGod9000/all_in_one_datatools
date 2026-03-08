@@ -7,6 +7,7 @@ import { AppSelect } from '../components/AppSelect';
 import type { TableRow } from '../types';
 
 function tableId(t: TableRow) {
+  if (t.type === 'pending_request' && t.request_id != null) return `pending-${t.request_id}`;
   return `${t.env_schema || ''}.${t.table_name || ''}`;
 }
 
@@ -45,17 +46,43 @@ export default function Assets() {
     if (env) params.set('env_schema', env);
     params.set('filter', filter);
     if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim());
-    getApi('/assets/tables' + (params.toString() ? '?' + params.toString() : ''))
-      .then((res) => {
+    const tablesUrl = '/assets/tables' + (params.toString() ? '?' + params.toString() : '');
+    const needsPending = filter === 'tables' || filter === 'to_be_deleted' || filter === 'backups';
+    Promise.all([
+      getApi(tablesUrl),
+      needsPending ? getApi('/api/table-requests?status=pending_approval') : Promise.resolve({ ok: false, json: {} }),
+    ])
+      .then(([tablesRes, pendingRes]) => {
         setLoading(false);
-        if (res.ok && Array.isArray(res.json?.tables)) {
-          setTables(res.json.tables);
-        } else if (!res.ok) {
-          setLoadError(res.json?.detail || 'Failed to load tables');
+        if (!tablesRes.ok) {
+          setLoadError(tablesRes.json?.detail || 'Failed to load tables');
           setTables([]);
-        } else {
-          setTables([]);
+          return;
         }
+        let list: TableRow[] = Array.isArray(tablesRes.json?.tables) ? tablesRes.json.tables : [];
+        if (needsPending && pendingRes.ok && Array.isArray(pendingRes.json?.requests)) {
+          const requests = pendingRes.json.requests as { id: number; table_name: string; environment: string; submitted_at: string | null; action?: string }[];
+          const actionFilter =
+            filter === 'tables' ? 'create' : filter === 'to_be_deleted' ? 'delete' : 'restore';
+          const pending: TableRow[] = requests
+            .filter((r) => (r.action || 'create') === actionFilter)
+            .map((r) => ({
+              env_schema: (r.environment || 'prod').toLowerCase(),
+              table_name: r.table_name,
+              type: 'pending_request' as const,
+              status: 'Pending',
+              created_at: r.submitted_at || undefined,
+              request_id: r.id,
+            }));
+          list = [...pending, ...list];
+          const earliestFirst = filter === 'backups';
+          list.sort((a, b) => {
+            const aAt = a.created_at || '';
+            const bAt = b.created_at || '';
+            return earliestFirst ? aAt.localeCompare(bAt) : bAt.localeCompare(aAt);
+          });
+        }
+        setTables(list);
       })
       .catch((err) => {
         setLoading(false);
@@ -136,6 +163,24 @@ export default function Assets() {
     if (!deleteOpen) return;
     const t = deleteOpen;
     setDeleteOpen(null);
+    const isProd = t.env_schema?.toLowerCase() === 'prod';
+    if (isProd) {
+      const res = await api('/api/table-requests', {
+        table_name: t.table_name,
+        sql_statement: '',
+        environment: 'PROD',
+        submitted_by: 'Joseph The Data Engineer',
+        action: 'delete',
+      });
+      if (res.ok) {
+        loadAssets();
+        window.dispatchEvent(new Event('approval-updated'));
+        toast('PROD delete request submitted for approval.', 'success');
+      } else {
+        toast(res.json?.detail || 'Failed to submit delete request', 'error');
+      }
+      return;
+    }
     const res = await api('/assets/schedule-delete', { env_schema: t.env_schema, table_name: t.table_name });
     if (res.ok) {
       loadAssets();
@@ -147,6 +192,24 @@ export default function Assets() {
 
   const handleRestore = async (t: TableRow) => {
     setOpenMenu(null);
+    const isProd = t.env_schema?.toLowerCase() === 'prod';
+    if (isProd) {
+      const res = await api('/api/table-requests', {
+        table_name: t.table_name,
+        sql_statement: '',
+        environment: 'PROD',
+        submitted_by: 'Joseph The Data Engineer',
+        action: 'restore',
+      });
+      if (res.ok) {
+        loadAssets();
+        window.dispatchEvent(new Event('approval-updated'));
+        toast('PROD restore request submitted for approval.', 'success');
+      } else {
+        toast(res.json?.detail || 'Failed to submit restore request', 'error');
+      }
+      return;
+    }
     const res = await api('/assets/restore-backup', { env_schema: t.env_schema, table_name: t.table_name });
     if (res.ok) {
       loadAssets();
@@ -228,12 +291,13 @@ export default function Assets() {
                 </thead>
                 <tbody>
                   {tables.map((t) => {
-                    const status = t.type === 'backup' ? 'Backup' : t.type === 'to_be_deleted' ? (t.delete_after ? `Delete ${t.delete_after}` : 'To delete') : (t.status || 'Active');
+                    const status = t.type === 'pending_request' ? 'Pending' : t.type === 'backup' ? 'Backup' : t.type === 'to_be_deleted' ? (t.delete_after ? `Delete ${t.delete_after}` : 'To delete') : (t.status || 'Active');
+                    const rowKey = t.type === 'pending_request' && t.request_id != null ? `pending-${t.request_id}` : t.env_schema + '.' + t.table_name;
                     return (
-                      <tr key={t.env_schema + '.' + t.table_name}>
+                      <tr key={rowKey}>
                         <td>{t.env_schema || ''}</td>
                         <td><span className="table-name">{t.table_name || ''}</span></td>
-                        <td>{t.owner || '—'}</td>
+                        <td>{t.type === 'pending_request' ? '—' : (t.owner || '—')}</td>
                         <td>{status}</td>
                         <td>{fmtDate(t.created_at)}</td>
                         <td>
@@ -263,9 +327,12 @@ export default function Assets() {
               right: window.innerWidth - openMenu.triggerRef.getBoundingClientRect().right,
             }}
           >
-          <button type="button" className="show-details" onClick={() => handleShowDetails(openMenu.table)}>Show details</button>
+          {openMenu.table.type === 'pending_request' && (
+            <button type="button" className="show-details" onClick={() => { setOpenMenu(null); navigate('/approval-center'); }}>Go to Approval Center</button>
+          )}
           {openMenu.table.type === 'table' && (
             <>
+              <button type="button" className="show-details" onClick={() => handleShowDetails(openMenu.table)}>Show details</button>
               <button type="button" className="generate-select" onClick={() => handleGenerateSelect(openMenu.table)}>Generate SELECT</button>
               <button type="button" className="generate-ddl" onClick={() => handleGenerateDdl(openMenu.table)}>Generate DDL</button>
               <button type="button" className="delete" onClick={() => handleDeleteClick(openMenu.table)}>Delete</button>

@@ -11,6 +11,8 @@ import CompareRuns from './pages/CompareRuns';
 import Validate from './pages/Validate';
 import ValidateRuns from './pages/ValidateRuns';
 import Query from './pages/Query';
+import ApprovalCenter from './pages/ApprovalCenter';
+import RequestHistory from './pages/RequestHistory';
 
 function App() {
   return (
@@ -28,6 +30,8 @@ function App() {
                 <Route path="validate" element={<Validate />} />
                 <Route path="validate/runs" element={<ValidateRuns />} />
                 <Route path="query" element={<Query />} />
+                <Route path="approval-center" element={<ApprovalCenter />} />
+                <Route path="requests-history" element={<RequestHistory />} />
               </Route>
             </Routes>
             </BrowserRouter>

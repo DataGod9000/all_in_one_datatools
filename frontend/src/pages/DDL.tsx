@@ -43,7 +43,7 @@ interface ColumnRow {
 export default function DDL() {
   const toast = useToast();
   const [ddl, setDdl] = useState('');
-  const [env, setEnv] = useState('dev');
+  const [env, setEnv] = useState<'dev' | 'uat' | 'prod'>('dev');
   const [layer, setLayer] = useState('ods');
   const [domain, setDomain] = useState('growth');
   const [core, setCore] = useState('');
@@ -193,17 +193,30 @@ export default function DDL() {
       setResult({ text: 'Could not build DDL from columns.', error: true });
       return;
     }
-    setResult({ text: 'Creating table…', error: false });
-    const res = await api('/ddl/apply', {
-      ddl: builtDdl,
-      env_schema: env,
+    setResult({ text: 'Submitting…', error: false });
+    const envUpper = env.toUpperCase();
+    const res = await api('/api/table-requests', {
+      table_name: assembledName,
+      sql_statement: builtDdl,
+      environment: envUpper,
+      submitted_by: 'Joseph The Data Engineer',
       column_comments: comments,
     });
-    const msg = res.ok ? res.json : res.json?.detail ?? res.json;
-    setResult({
-      text: typeof msg === 'object' ? JSON.stringify(msg, null, 2) : String(msg),
-      error: !res.ok,
-    });
+    if (res.ok && res.json?.created) {
+      setResult({ text: res.json.message || `Table created in ${envUpper}.`, error: false });
+      toast(res.json.message || 'Table created.', 'success');
+    } else if (res.ok && res.json?.created === false) {
+      setResult({
+        text: res.json.message || 'PROD request submitted for approval.',
+        error: false,
+      });
+      toast('PROD table request submitted. Check Approval Center.', 'success');
+      window.dispatchEvent(new Event('approval-updated'));
+    } else {
+      const msg = res.json?.detail ?? res.json?.message ?? JSON.stringify(res.json);
+      setResult({ text: String(msg), error: true });
+      toast(String(msg), 'error');
+    }
   };
 
   const handleCoreChange = (v: string) => {
@@ -233,15 +246,16 @@ export default function DDL() {
 );`}
             />
           </div>
-          <div className="row-inline">
+            <div className="row-inline">
             <div className="env-wrap">
               <label>Environment</label>
               <AppSelect
                 value={env}
-                onChange={setEnv}
+                onChange={(v) => setEnv(v as 'dev' | 'uat' | 'prod')}
                 options={[
-                  { value: 'dev', label: 'dev' },
-                  { value: 'prod', label: 'prod' },
+                  { value: 'dev', label: 'DEV' },
+                  { value: 'uat', label: 'UAT' },
+                  { value: 'prod', label: 'PROD' },
                 ]}
               />
             </div>
