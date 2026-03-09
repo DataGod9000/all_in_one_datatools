@@ -251,7 +251,6 @@ export default function CompareRuns() {
                   {detailsOpen.left_pt ? ` (PT ${detailsOpen.left_pt})` : ''}
                 </code>
               </div>
-              <div className="compare-details-vs">vs</div>
               <div className="compare-details-title-row">
                 <span className="details-label">Right</span>
                 <code className="compare-details-table">
