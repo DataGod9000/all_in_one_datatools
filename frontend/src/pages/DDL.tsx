@@ -142,6 +142,37 @@ export default function DDL() {
     setResult({ text: 'Comments filled. Review and edit if needed, then click Create table.', error: false });
   };
 
+  const handleGenerateSampleDdl = () => {
+    const samples = [
+      `CREATE TABLE kline_candles (
+  open_time BIGINT NOT NULL,
+  open NUMERIC(20,8) NOT NULL,
+  high NUMERIC(20,8) NOT NULL,
+  low NUMERIC(20,8) NOT NULL,
+  close NUMERIC(20,8) NOT NULL
+);`,
+      `CREATE TABLE raw_user_events (
+  event_id BIGINT NOT NULL,
+  user_id BIGINT,
+  event_type TEXT,
+  event_ts TIMESTAMP NOT NULL
+);`,
+      `CREATE TABLE trade_orders_tmp (
+  order_id BIGINT NOT NULL,
+  account_id BIGINT,
+  symbol TEXT NOT NULL,
+  price NUMERIC(18,8),
+  quantity NUMERIC(18,8),
+  created_at TIMESTAMP NOT NULL
+);`,
+    ];
+    const sample = samples[Math.floor(Math.random() * samples.length)];
+    setDdl(sample);
+    setParsed(null);
+    setColumns([]);
+    setResult(null);
+  };
+
   const buildDdlFromColumns = (): string | null => {
     if (!parsed) return null;
     const tableName = assembledName || parsed.table;
@@ -259,6 +290,7 @@ export default function DDL() {
               />
             </div>
             <button type="button" className="primary" onClick={handleParse}>Parse &amp; edit columns</button>
+            <button type="button" className="generate-ddl-btn" onClick={handleGenerateSampleDdl}>Generate sample DDL</button>
           </div>
           {parsed && columns.length > 0 && (
             <div id="columns-block" className="columns-block visible">

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DataTools Portfolio — Overview &amp; Capabilities</title>
+  <style>
+    :root { --ink: #1a1a1a; --muted: #555; --border: #ddd; --bg: #fff; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; color: var(--ink); background: var(--bg); max-width: 800px; margin: 0 auto; padding: 2rem; }
+    h1 { font-size: 1.75rem; border-bottom: 2px solid var(--ink); padding-bottom: 0.5rem; margin-top: 0; }
+    h2 { font-size: 1.35rem; margin-top: 2rem; color: var(--ink); }
+    h3 { font-size: 1.1rem; margin-top: 1.25rem; color: var(--muted); }
+    p { margin: 0.75rem 0; }
+    ul, ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    li { margin: 0.35rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+    th { background: #f5f5f5; font-weight: 600; }
+    code { background: #f0f0f0; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.9em; }
+    .intro { font-size: 1.05rem; color: var(--muted); }
+    .section { margin-bottom: 2rem; }
+    .endpoint { font-family: ui-monospace, monospace; font-size: 0.9rem; }
+    @media print {
+      body { padding: 1rem; max-width: none; }
+      h2 { page-break-after: avoid; }
+      .section { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>DataTools Portfolio — Overview &amp; Capabilities</h1>
+
+<p class="intro">A detailed introduction to the DataTools Portfolio application: what it is, what problems it solves, and a full account of its functions and strengths.</p>
+
+<!-- ========== INTRODUCTION ========== -->
+<section class="section">
+  <h2>1. Introduction</h2>
+  <p><strong>DataTools Portfolio</strong> is an internal data platform for managing database tables, schema changes, data quality checks, and table comparisons in a governed, audit-friendly way. It is built <strong>SQL-first</strong> and runs against <strong>Supabase Postgres</strong> (or any PostgreSQL-compatible database), with a <strong>FastAPI</strong> backend and a <strong>React (Vite)</strong> frontend.</p>
+  <p>The application provides:</p>
+  <ul>
+    <li><strong>DDL lifecycle</strong> — Parse, validate, and apply <code>CREATE TABLE</code> statements with governance rules (e.g. naming, required column comments).</li>
+    <li><strong>Table comparison</strong> — Compare two tables (e.g. dev vs prod) by join keys and optional partition filters, with row counts, missing rows, and column-level value differences.</li>
+    <li><strong>Data validation</strong> — Run quality checks (total rows, null counts per column, duplicate rows) and store results for review.</li>
+    <li><strong>Asset management</strong> — Browse tables, backups, and scheduled deletions; view DDL and column details; schedule safe deletes and restore from backup.</li>
+    <li><strong>Approval workflow</strong> — For production (PROD), table creation, deletion, and restore go through a two-step approval (Team Lead → Data Governance) before execution.</li>
+    <li><strong>Ad-hoc query</strong> — Run single SELECT or INSERT statements (with limits and safety checks) for quick exploration.</li>
+  </ul>
+  <p>All write actions are <strong>audited</strong> in <code>datatools.audit_log</code>, and the system enforces identifier validation and allowed schemas so that no arbitrary user SQL is executed.</p>
+</section>
+
+<!-- ========== PROBLEMS IT SOLVES ========== -->
+<section class="section">
+  <h2>2. Problems It Solves</h2>
+
+  <h3>2.1 Inconsistent or unsafe schema changes</h3>
+  <p>Teams often apply DDL manually or via ad-hoc scripts, leading to typos, non-standard names, and risky statements (e.g. DROP, TRUNCATE). DataTools Portfolio:</p>
+  <ul>
+    <li>Parses and validates <code>CREATE TABLE</code> only; rejects DROP, ALTER, TRUNCATE, COPY, GRANT, REVOKE.</li>
+    <li>Enforces a <strong>table naming governance</strong> pattern (e.g. <code>{layer}_josephco_{domain}_{tablename}_{granularity}</code>) so tables are discoverable and consistent.</li>
+    <li>Requires <strong>English and Chinese column comments</strong> for data governance before apply.</li>
+  </ul>
+
+  <h3>2.2 No visibility into dev vs prod differences</h3>
+  <p>Comparing tables across environments (e.g. dev and prod) is tedious and error-prone when done manually. The app:</p>
+  <ul>
+    <li>Runs comparisons in the database (SQL joins), so large tables are not loaded into memory.</li>
+    <li>Supports join keys and optional partition (e.g. <code>pt</code>) filters, with suggested join keys from column name/type matching.</li>
+    <li>Stores run history (row counts, missing-in-left/right, column diffs, samples) so teams can review and re-run.</li>
+  </ul>
+
+  <h3>2.3 Ad-hoc data quality checks with no history</h3>
+  <p>Data quality (nulls, duplicates, row counts) is often checked one-off in SQL with no record. The app:</p>
+  <ul>
+    <li>Runs validation jobs (total rows, null counts per column, duplicate rows) in the background.</li>
+    <li>Persists results in <code>datatools.validation_runs</code> so teams can track quality over time and share links to runs.</li>
+  </ul>
+
+  <h3>2.4 Production changes without approval or audit</h3>
+  <p>Production table creation, deletion, or restore can cause outages or data loss if done without review. The app:</p>
+  <ul>
+    <li>Creates tables in <strong>DEV</strong> immediately; in <strong>PROD</strong>, create/delete/restore go through <strong>table requests</strong>.</li>
+    <li>Uses a <strong>two-step approval</strong> (Team Lead → Data Governance) for PROD requests.</li>
+    <li>Logs every write action in <code>datatools.audit_log</code> with action, schema, and details.</li>
+  </ul>
+
+  <h3>2.5 Risky or untracked table deletion</h3>
+  <p>Deleting tables without backup or a grace period is dangerous. The app:</p>
+  <ul>
+    <li><strong>Schedule delete</strong>: clones the table to <code>back_up_&lt;name&gt;_YYYYMMDD</code>, renames the live table to <code>to_be_deleted_&lt;name&gt;</code>, and schedules physical deletion after 7 days.</li>
+    <li><strong>Restore backup</strong>: renames a backup table back to the original and cleans up the deletion schedule.</li>
+    <li>In PROD, delete and restore require approval before execution.</li>
+  </ul>
+
+  <h3>2.6 Scattered table metadata and DDL</h3>
+  <p>Finding table definitions and column info often requires digging in the database. The app:</p>
+  <ul>
+    <li>Lists tables (from registry), backups (<code>back_up_%</code>), and to-be-deleted tables with search.</li>
+    <li>Exposes table details (row count, size), columns, and <strong>DDL</strong> via API and UI for copy/paste and documentation.</li>
+  </ul>
+</section>
+
+<!-- ========== FUNCTIONS AND CAPABILITIES ========== -->
+<section class="section">
+  <h2>3. Functions and Capabilities (Detailed)</h2>
+
+  <h3>3.1 DDL — Parse, suggest, apply</h3>
+  <table>
+    <thead><tr><th>Function / Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="endpoint">POST /ddl/parse</td>
+        <td>Parses a <code>CREATE TABLE</code> DDL string and returns schema, table name, columns (name, type, nullable, default), and constraints. No database access. Validates that only CREATE TABLE is present.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">POST /ddl/suggest-column-comments</td>
+        <td>Uses OpenAI (GPT-4o-mini) to generate short <strong>English and Chinese</strong> column comments from column names and types. Requires <code>OPENAI_API_KEY</code> in .env. Returns a list of <code>column_name</code>, <code>comment_en</code>, <code>comment_zh</code>.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">POST /ddl/suggest-table-name</td>
+        <td>Uses AI to suggest a single table name following the governance pattern (e.g. <code>ods_josephco_growth_sample_users_di</code>). Validates the suggestion against the same regex; returns error if not compliant.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">POST /ddl/apply</td>
+        <td>Validates <code>env_schema</code> (dev/prod), parses DDL, enforces governance (table name + column comments), builds and executes <code>CREATE TABLE</code> in the database, applies column comments, upserts <code>table_registry</code>, and writes to <code>audit_log</code>. DEV only for direct apply; PROD create goes through approval.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Why it’s valuable:</strong> Single place to edit DDL, get AI-assisted comments and naming, and apply safely with full audit and governance.</p>
+
+  <h3>3.2 Compare — Suggest keys, run comparison</h3>
+  <table>
+    <thead><tr><th>Function / Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="endpoint">POST /compare/suggest-keys</td>
+        <td>Given left/right table names and schema(s), fetches column names and types from both tables and suggests join key candidates (e.g. same name + same type). Returns scored candidates (e.g. by name similarity and type match) up to <code>max_candidates</code>.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">POST /compare/run</td>
+        <td>Queues a comparison job: left vs right table (optionally different env schemas), join keys (or key pairs), optional compare columns, optional partition filters (<code>left_pt</code>, <code>right_pt</code>). Runs in a background thread. Returns <code>run_id</code> and status <code>pending</code>. Job computes: left/right row counts, missing_in_right, missing_in_left, sample of unjoined rows, and per-column value difference counts (for chosen compare columns). Results stored in <code>datatools.compare_runs</code>.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /compare/runs</td>
+        <td>Lists comparison runs with optional <code>env_schema</code> filter and <code>limit</code>. Returns id, tables, schemas, join keys, compare columns, result_json, status, error_message, created_at.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /compare/runs/{run_id}</td>
+        <td>Returns a single run (for polling status and viewing results).</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Why it’s valuable:</strong> Compare dev vs prod (or any two tables) without writing custom SQL; history and samples are stored for debugging and reporting.</p>
+
+  <h3>3.3 Validate — Run and list</h3>
+  <table>
+    <thead><tr><th>Function / Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="endpoint">POST /validate/run</td>
+        <td>Queues a validation job for a given <code>target_table</code> and <code>env_schema</code>. Runs in background: total row count, null count per column, duplicate row count (full-row duplicates). Writes result to <code>datatools.validation_runs</code> and audit_log.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /validate/runs</td>
+        <td>Lists validation runs with optional <code>env_schema</code> and <code>limit</code>.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /validate/runs/{run_id}</td>
+        <td>Returns one run (status, result_json, error_message).</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Why it’s valuable:</strong> Consistent, repeatable data quality checks with stored results and no one-off scripts.</p>
+
+  <h3>3.4 Assets — Tables, backups, DDL, schedule delete, restore</h3>
+  <table>
+    <thead><tr><th>Function / Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="endpoint">GET /assets/tables</td>
+        <td>Lists tables: <code>filter=tables</code> (from table_registry), <code>backups</code> (names like <code>back_up_%</code>), or <code>to_be_deleted</code> (names like <code>to_be_deleted_%</code>). Optional <code>env_schema</code> and search <code>q</code>. Excludes backups and to_be_deleted from “tables” view when appropriate.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /assets/table-columns</td>
+        <td>Returns column list (name, type) for a given schema and table from <code>information_schema</code>.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /assets/table-details</td>
+        <td>Returns row count and approximate size for a table (and optional columns).</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /assets/table-ddl</td>
+        <td>Builds and returns <code>CREATE TABLE</code> DDL for the table (from registry or from database metadata). Useful for documentation and copy/paste.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">POST /assets/schedule-delete</td>
+        <td>Creates backup <code>back_up_&lt;name&gt;_YYYYMMDD</code>, renames table to <code>to_be_deleted_&lt;name&gt;</code>, inserts into <code>deletion_schedule</code> (delete_after = now + 7 days), removes from table_registry. Audit logged.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">POST /assets/restore-backup</td>
+        <td>Restores a backup table: drops <code>to_be_deleted_&lt;name&gt;</code> if present, renames backup to original name, cleans deletion_schedule, adds/updates table_registry. Audit logged.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Why it’s valuable:</strong> One place to see all assets, get DDL, and perform safe delete/restore with backups and scheduling.</p>
+
+  <h3>3.5 Query</h3>
+  <table>
+    <thead><tr><th>Function / Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="endpoint">POST /query/run</td>
+        <td>Executes a single <strong>SELECT</strong> or <strong>INSERT</strong> statement. SELECT: automatically adds <code>LIMIT 500</code> if not present; returns columns and rows. INSERT: executes and returns rows_affected. Comments stripped for validation; only one statement allowed. No DROP/ALTER/TRUNCATE etc.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Why it’s valuable:</strong> Quick ad-hoc exploration and small inserts without opening a separate DB client.</p>
+
+  <h3>3.6 Approval workflow — Table requests</h3>
+  <table>
+    <thead><tr><th>Function / Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="endpoint">POST /api/table-requests</td>
+        <td>Creates a table request. <strong>DEV</strong>: create is applied immediately (DDL apply + column comments + table_registry + created_tables). <strong>PROD</strong>: create/delete/restore create a request with status <code>pending_approval</code>; no execution until approved. Delete/restore only allowed for PROD.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /api/table-requests</td>
+        <td>Lists requests; optional <code>status</code> filter (pending_approval, pending_governance, approved, rejected). <code>pending_approval</code> includes pending_governance.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">PATCH /api/table-requests/{id}/approve</td>
+        <td>Approval step. <strong>step=team_lead</strong>: pending_approval → pending_governance (team lead approval). <strong>step=governance</strong>: pending_governance → approved and then <em>executes</em> the action: for create, records in created_tables; for delete, executes schedule-delete (backup + rename + deletion_schedule); for restore, executes restore-backup. All with audit.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">PATCH /api/table-requests/{id}/reject</td>
+        <td>Rejects the request with optional rejection_reason.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /api/created-tables</td>
+        <td>Lists tables created through the platform (created_tables) for history and traceability.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Why it’s valuable:</strong> PROD changes are gated by a clear two-step approval and fully audited; DEV remains fast for iteration.</p>
+
+  <h3>3.7 Health and frontend</h3>
+  <table>
+    <thead><tr><th>Function / Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="endpoint">GET /health</td>
+        <td>Returns <code>{"status": "ok"}</code> for liveness checks.</td>
+      </tr>
+      <tr>
+        <td class="endpoint">GET /{path}</td>
+        <td>Serves the React SPA: static files when they exist, otherwise <code>index.html</code> for client-side routing. API docs at <code>/docs</code>.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ========== GREATNESS / STRENGTHS ========== -->
+<section class="section">
+  <h2>4. Why This App Is Valuable (The “Greatness”)</h2>
+  <ul>
+    <li><strong>SQL-first, no arbitrary execution:</strong> All database work is controlled (parsed DDL, fixed comparison/validation queries, approved requests). Identifiers are validated; only allowed schemas (e.g. dev, prod) are used. This reduces risk of injection and accidental damage.</li>
+    <li><strong>Governance by design:</strong> Table naming and dual-language column comments are enforced before tables are created, improving consistency and documentation.</li>
+    <li><strong>Full audit trail:</strong> Every write (DDL apply, compare run, validate run, schedule delete, restore, approval) is logged in <code>datatools.audit_log</code> with action, env_schema, and details for compliance and debugging.</li>
+    <li><strong>Safe deletion and restore:</strong> Schedule delete always creates a dated backup and a 7-day grace period; restore is explicit and tracked. In PROD, both require approval.</li>
+    <li><strong>Scalable compare and validate:</strong> Comparisons and validations run in the database (JOINs, COUNTs, DISTINCT) and in background threads, so large tables don’t block the API and results are stored for later review.</li>
+    <li><strong>Clear PROD vs DEV:</strong> DEV allows direct create; PROD requires approval with a two-step workflow (Team Lead → Data Governance), so production stays protected while development stays agile.</li>
+    <li><strong>Unified UX:</strong> One web app for DDL, compare, validate, assets, approval center, request history, and run query reduces context-switching and standardizes workflows.</li>
+    <li><strong>AI-assisted productivity:</strong> Optional AI suggestions for column comments and table names (with governance validation) speed up authoring without sacrificing standards.</li>
+  </ul>
+</section>
+
+<!-- ========== TECH SUMMARY ========== -->
+<section class="section">
+  <h2>5. Technical Summary</h2>
+  <p><strong>Backend:</strong> Python 3.10+, FastAPI, psycopg (Postgres), sqlglot (DDL parse), OpenAI (optional).</p>
+  <p><strong>Frontend:</strong> React, Vite, React Router; theme (light/dark), toasts, responsive layout.</p>
+  <p><strong>Database:</strong> Supabase Postgres (or compatible). Schema <code>datatools</code> with tables: <code>audit_log</code>, <code>table_registry</code>, <code>compare_runs</code>, <code>validation_runs</code>, <code>deletion_schedule</code>, <code>table_requests</code>, <code>created_tables</code>. Setup script: <code>scripts/setup_datatools_schema.sql</code>.</p>
+  <p><strong>Run:</strong> <code>cd frontend && npm run build</code> then <code>python main.py</code> or <code>uvicorn main:app --port 8000</code>. App at <strong>http://localhost:8000</strong>, API docs at <strong>http://localhost:8000/docs</strong>.</p>
+</section>
+
+<p style="margin-top: 2rem; font-size: 0.9rem; color: var(--muted);">DataTools Portfolio — Overview &amp; Capabilities. Generate PDF via browser: File → Print → Save as PDF.</p>
+
+</body>
+</html>

@@ -115,6 +115,22 @@
   align-items: center;
 }
 
+/* Create table: sample DDL button (inline with Parse, not black) */
+.create-table-flow .generate-ddl-btn {
+  padding: 0.65rem 1.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--content-border);
+  background: var(--content-bg-card);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.create-table-flow .generate-ddl-btn:hover {
+  background: var(--content-bg);
+}
+
 /* Validate page: dark-to-light black/grey gradient, more visible */
 .validate-info {
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.14) 0%, rgba(0, 0, 0, 0.02) 100%) !important;
